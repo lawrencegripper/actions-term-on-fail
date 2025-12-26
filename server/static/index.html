@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Action Terminal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1 { margin-bottom: 20px; }
+    .login-btn { background: #238636; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
+    .login-btn:hover { background: #2ea043; }
+    .sessions { margin-top: 20px; }
+    .session { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 10px; cursor: pointer; }
+    .session:hover { border-color: #58a6ff; }
+    .session h3 { color: #58a6ff; margin-bottom: 5px; }
+    .session p { color: #8b949e; font-size: 14px; }
+    #terminal-container { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1b26; }
+    #terminal { width: 100%; height: 100%; }
+    .close-btn { position: fixed; top: 10px; right: 10px; z-index: 100; background: #f85149; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    .status { padding: 10px; background: #161b22; border-radius: 6px; margin-bottom: 20px; }
+    .status.connecting { border-left: 3px solid #f0883e; }
+    .status.connected { border-left: 3px solid #238636; }
+    .status.error { border-left: 3px solid #f85149; }
+    #app { display: none; }
+  </style>
+</head>
+<body>
+  <div id="login-view" class="container">
+    <h1>🖥️ Action Terminal</h1>
+    <p style="margin-bottom: 20px;">Access your GitHub Actions runners directly in the browser.</p>
+    <a href="/auth/github"><button class="login-btn">Login with GitHub</button></a>
+  </div>
+
+  <div id="app" class="container">
+    <h1>🖥️ Action Terminal</h1>
+    <div id="status" class="status" style="display:none;"></div>
+    <div class="sessions">
+      <h2>Active Sessions</h2>
+      <div id="sessions-list"><p>Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="terminal-container">
+    <button class="close-btn" onclick="closeTerminal()">✕ Close</button>
+    <div id="terminal"></div>
+  </div>
+
+  <script type="module">
+    import { createLibp2p } from 'https://esm.sh/@libp2p/webrtc@5?bundle'
+    import { webRTC } from 'https://esm.sh/@libp2p/webrtc@5?bundle'
+    import { noise } from 'https://esm.sh/@chainsafe/libp2p-noise@16?bundle'
+    import { yamux } from 'https://esm.sh/@chainsafe/libp2p-yamux@7?bundle'
+    import { multiaddr } from 'https://esm.sh/@multiformats/multiaddr@12?bundle'
+    import { init, Terminal } from 'https://esm.sh/ghostty-web@0.4?bundle'
+
+    let node = null;
+    let term = null;
+    let currentStream = null;
+
+    // Google's public STUN servers
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    };
+
+    // Check auth
+    async function checkAuth() {
+      try {
+        const resp = await fetch('/api/sessions');
+        if (resp.ok) {
+          document.getElementById('login-view').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+          loadSessions();
+          return true;
+        }
+      } catch (e) {}
+      document.getElementById('login-view').style.display = 'block';
+      return false;
+    }
+
+    async function loadSessions() {
+      const resp = await fetch('/api/sessions');
+      const sessions = await resp.json();
+      const list = document.getElementById('sessions-list');
+      
+      if (!sessions || sessions.length === 0) {
+        list.innerHTML = '<p style="color: #8b949e;">No active sessions. Start a workflow with the action to see it here.</p>';
+        return;
+      }
+
+      list.innerHTML = sessions.map(s => `
+        <div class="session" onclick="window.connectToSession('${s.peerId}', ${JSON.stringify(s.multiaddrs)})">
+          <h3>${s.repo || 'Unknown Repo'}</h3>
+          <p>Run: ${s.runId || 'N/A'} • Started: ${new Date(s.createdAt).toLocaleString()}</p>
+          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Peer: ${s.peerId.slice(0, 16)}...</p>
+        </div>
+      `).join('');
+    }
+
+    window.connectToSession = async function(peerId, multiaddrs) {
+      const status = document.getElementById('status');
+      status.style.display = 'block';
+      status.className = 'status connecting';
+      status.textContent = 'Connecting to runner...';
+
+      try {
+        // Create libp2p node if not exists
+        if (!node) {
+          node = await createLibp2p({
+            transports: [webRTC({ rtcConfiguration: rtcConfig })],
+            connectionEncrypters: [noise()],
+            streamMuxers: [yamux()]
+          });
+          await node.start();
+          console.log('Browser node started:', node.peerId.toString());
+        }
+
+        // Find WebRTC multiaddr
+        const webrtcAddr = multiaddrs.find(a => a.includes('/webrtc/'));
+        if (!webrtcAddr) {
+          throw new Error('No WebRTC address available from runner');
+        }
+
+        // Connect to runner
+        const ma = multiaddr(webrtcAddr);
+        const stream = await node.dialProtocol(ma, '/terminal/1.0.0');
+        currentStream = stream;
+
+        status.className = 'status connected';
+        status.textContent = 'Connected!';
+
+        // Open terminal
+        await openTerminal(stream);
+
+      } catch (err) {
+        console.error('Connection failed:', err);
+        status.className = 'status error';
+        status.textContent = 'Connection failed: ' + err.message;
+      }
+    };
+
+    async function openTerminal(stream) {
+      document.getElementById('terminal-container').style.display = 'block';
+      
+      await init();
+      
+      term = new Terminal({
+        fontSize: 14,
+        theme: {
+          background: '#1a1b26',
+          foreground: '#a9b1d6',
+        },
+      });
+
+      term.open(document.getElementById('terminal'));
+
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+
+      // Queue for sending data to stream
+      const sendQueue = [];
+      let sendResolve = null;
+
+      // Input generator for stream sink
+      async function* inputGenerator() {
+        while (currentStream) {
+          if (sendQueue.length > 0) {
+            yield sendQueue.shift();
+          } else {
+            await new Promise(r => { sendResolve = r; });
+          }
+        }
+      }
+
+      // Start piping input to stream
+      stream.sink(inputGenerator()).catch(() => {});
+
+      // Handle terminal input -> queue
+      term.onData(data => {
+        sendQueue.push(encoder.encode(data));
+        if (sendResolve) {
+          sendResolve();
+          sendResolve = null;
+        }
+      });
+
+      // Handle stream -> terminal
+      (async () => {
+        try {
+          for await (const chunk of stream.source) {
+            const text = decoder.decode(chunk.subarray());
+            term.write(text);
+          }
+        } catch (err) {
+          console.log('Stream closed:', err);
+          term.write('\r\n[Connection closed]\r\n');
+        }
+      })();
+
+      term.focus();
+    }
+
+    window.closeTerminal = function() {
+      document.getElementById('terminal-container').style.display = 'none';
+      if (currentStream) {
+        currentStream.close();
+        currentStream = null;
+      }
+      if (term) {
+        term.dispose();
+        term = null;
+      }
+      document.getElementById('status').style.display = 'none';
+    };
+
+    // Refresh sessions every 10s
+    setInterval(() => {
+      if (document.getElementById('app').style.display !== 'none') {
+        loadSessions();
+      }
+    }, 10000);
+
+    checkAuth();
+  </script>
+</body>
+</html>
