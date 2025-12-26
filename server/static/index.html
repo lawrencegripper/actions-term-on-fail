@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>Action Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
@@ -22,6 +23,23 @@
     .status.connected { border-left: 3px solid #238636; }
     .status.error { border-left: 3px solid #f85149; }
     #app { display: none; }
+    
+    /* OTP Modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; }
+    .modal h2 { margin-bottom: 16px; color: #58a6ff; }
+    .modal p { margin-bottom: 16px; color: #8b949e; font-size: 14px; }
+    .modal input { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 18px; letter-spacing: 4px; text-align: center; margin-bottom: 16px; }
+    .modal input:focus { outline: none; border-color: #58a6ff; }
+    .modal-buttons { display: flex; gap: 10px; }
+    .modal-buttons button { flex: 1; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    .modal-buttons .primary { background: #238636; color: white; }
+    .modal-buttons .primary:hover { background: #2ea043; }
+    .modal-buttons .primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+    .modal-buttons .secondary { background: #21262d; color: #c9d1d9; }
+    .modal-buttons .secondary:hover { background: #30363d; }
+    .modal-error { color: #f85149; font-size: 14px; margin-bottom: 12px; display: none; }
   </style>
 </head>
 <body>
@@ -40,22 +58,35 @@
     </div>
   </div>
 
+  <!-- OTP Modal -->
+  <div id="otp-modal" class="modal-overlay">
+    <div class="modal">
+      <h2>🔐 Enter OTP Code</h2>
+      <p>Enter the 6-digit code from your authenticator app to access the terminal. The OTP secret was configured when the workflow was set up.</p>
+      <div id="otp-error" class="modal-error"></div>
+      <input type="text" id="otp-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+      <div class="modal-buttons">
+        <button class="secondary" onclick="window.cancelOTP()">Cancel</button>
+        <button class="primary" id="otp-submit" onclick="window.submitOTP()" disabled>Connect</button>
+      </div>
+    </div>
+  </div>
+
   <div id="terminal-container">
     <button class="close-btn" onclick="closeTerminal()">✕ Close</button>
     <div id="terminal"></div>
   </div>
 
   <script type="module">
-    import { createLibp2p } from 'https://esm.sh/@libp2p/webrtc@5?bundle'
-    import { webRTC } from 'https://esm.sh/@libp2p/webrtc@5?bundle'
-    import { noise } from 'https://esm.sh/@chainsafe/libp2p-noise@16?bundle'
-    import { yamux } from 'https://esm.sh/@chainsafe/libp2p-yamux@7?bundle'
-    import { multiaddr } from 'https://esm.sh/@multiformats/multiaddr@12?bundle'
-    import { init, Terminal } from 'https://esm.sh/ghostty-web@0.4?bundle'
+    import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm'
+    import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm'
 
-    let node = null;
     let term = null;
-    let currentStream = null;
+    let peerConnection = null;
+    let dataChannel = null;
+    let eventSource = null;
+    let pendingSession = null;
+    const browserId = Math.random().toString(36).substring(2, 15);
 
     // Google's public STUN servers
     const rtcConfig = {
@@ -91,60 +122,237 @@
       }
 
       list.innerHTML = sessions.map(s => `
-        <div class="session" onclick="window.connectToSession('${s.peerId}', ${JSON.stringify(s.multiaddrs)})">
+        <div class="session" onclick="window.promptOTPAndConnect('${s.sessionId}')">
           <h3>${s.repo || 'Unknown Repo'}</h3>
           <p>Run: ${s.runId || 'N/A'} • Started: ${new Date(s.createdAt).toLocaleString()}</p>
-          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Peer: ${s.peerId.slice(0, 16)}...</p>
+          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Session: ${s.sessionId}</p>
         </div>
       `).join('');
     }
 
-    window.connectToSession = async function(peerId, multiaddrs) {
+    // Show OTP modal and wait for code
+    window.promptOTPAndConnect = function(sessionId) {
+      pendingSession = { sessionId };
+      
+      // Reset modal state
+      document.getElementById('otp-input').value = '';
+      document.getElementById('otp-error').style.display = 'none';
+      document.getElementById('otp-submit').disabled = true;
+      document.getElementById('otp-modal').classList.add('active');
+      document.getElementById('otp-input').focus();
+    };
+
+    // Handle OTP input
+    document.getElementById('otp-input').addEventListener('input', (e) => {
+      const value = e.target.value.replace(/[^0-9]/g, '');
+      e.target.value = value;
+      document.getElementById('otp-submit').disabled = value.length !== 6;
+    });
+
+    document.getElementById('otp-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && e.target.value.length === 6) {
+        window.submitOTP();
+      }
+    });
+
+    window.cancelOTP = function() {
+      document.getElementById('otp-modal').classList.remove('active');
+      pendingSession = null;
+    };
+
+    window.submitOTP = async function() {
+      const otpCode = document.getElementById('otp-input').value;
+      if (otpCode.length !== 6 || !pendingSession) return;
+
+      document.getElementById('otp-modal').classList.remove('active');
+      
+      // Connect with OTP
+      await connectToSession(pendingSession.sessionId, otpCode);
+      pendingSession = null;
+    };
+
+    // Send signaling message to server
+    async function sendSignal(msg) {
+      try {
+        await fetch('/api/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(msg),
+        });
+      } catch (err) {
+        console.error('Failed to send signal:', err);
+      }
+    }
+
+    async function connectToSession(sessionId, otpCode) {
       const status = document.getElementById('status');
       status.style.display = 'block';
       status.className = 'status connecting';
       status.textContent = 'Connecting to runner...';
 
+      // Queue for ICE candidates received before remote description is set
+      let pendingCandidates = [];
+      let remoteDescriptionSet = false;
+
       try {
-        // Create libp2p node if not exists
-        if (!node) {
-          node = await createLibp2p({
-            transports: [webRTC({ rtcConfiguration: rtcConfig })],
-            connectionEncrypters: [noise()],
-            streamMuxers: [yamux()]
-          });
-          await node.start();
-          console.log('Browser node started:', node.peerId.toString());
-        }
+        // Create WebRTC peer connection FIRST
+        peerConnection = new RTCPeerConnection(rtcConfig);
 
-        // Find WebRTC multiaddr
-        const webrtcAddr = multiaddrs.find(a => a.includes('/webrtc/'));
-        if (!webrtcAddr) {
-          throw new Error('No WebRTC address available from runner');
-        }
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            sendSignal({
+              type: 'candidate',
+              sessionId,
+              browserId,
+              from: 'browser',
+              candidate: event.candidate.candidate,
+              mid: event.candidate.sdpMid,
+            });
+          }
+        };
 
-        // Connect to runner
-        const ma = multiaddr(webrtcAddr);
-        const stream = await node.dialProtocol(ma, '/terminal/1.0.0');
-        currentStream = stream;
+        peerConnection.onconnectionstatechange = () => {
+          console.log('Connection state:', peerConnection.connectionState);
+          if (peerConnection.connectionState === 'failed') {
+            status.className = 'status error';
+            status.textContent = 'Connection failed';
+          }
+        };
 
-        status.className = 'status connected';
-        status.textContent = 'Connected!';
+        // Subscribe to signaling messages via SSE
+        eventSource = new EventSource(`/api/signal/subscribe?browserId=${browserId}`);
+        
+        eventSource.onmessage = async (event) => {
+          const msg = JSON.parse(event.data);
+          console.log('Received signal:', msg.type);
+          
+          if (msg.type === 'answer' && msg.sdp) {
+            await peerConnection.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+            remoteDescriptionSet = true;
+            // Process any queued candidates
+            for (const candidate of pendingCandidates) {
+              try {
+                await peerConnection.addIceCandidate(candidate);
+              } catch (e) {
+                console.warn('Failed to add queued ICE candidate:', e);
+              }
+            }
+            pendingCandidates = [];
+          } else if (msg.type === 'candidate' && msg.candidate) {
+            const candidate = { candidate: msg.candidate, sdpMid: msg.mid || '0' };
+            if (remoteDescriptionSet) {
+              try {
+                await peerConnection.addIceCandidate(candidate);
+              } catch (e) {
+                console.warn('Failed to add ICE candidate:', e);
+              }
+            } else {
+              // Queue the candidate
+              pendingCandidates.push(candidate);
+            }
+          }
+        };
 
-        // Open terminal
-        await openTerminal(stream);
+        eventSource.onerror = (err) => {
+          console.error('SSE error:', err);
+        };
+
+        // Wait for SSE to connect
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Create data channel
+        dataChannel = peerConnection.createDataChannel('terminal', { ordered: true });
+        
+        dataChannel.onopen = () => {
+          console.log('Data channel opened');
+          status.textContent = 'Verifying OTP...';
+          
+          // Send OTP code for verification
+          dataChannel.send(JSON.stringify({ type: 'otp-response', code: otpCode }));
+        };
+
+        let otpVerified = false;
+        let messageBuffer = '';
+
+        dataChannel.onmessage = (event) => {
+          const text = event.data;
+          
+          if (!otpVerified) {
+            messageBuffer += text;
+            const newlineIdx = messageBuffer.indexOf('\n');
+            if (newlineIdx !== -1) {
+              const line = messageBuffer.slice(0, newlineIdx);
+              messageBuffer = messageBuffer.slice(newlineIdx + 1);
+              
+              try {
+                const msg = JSON.parse(line);
+                if (msg.type === 'otp-result') {
+                  if (msg.success) {
+                    otpVerified = true;
+                    status.className = 'status connected';
+                    status.textContent = 'Connected!';
+                    openTerminal(messageBuffer);
+                    messageBuffer = '';
+                  } else {
+                    throw new Error(msg.message || 'OTP verification failed');
+                  }
+                }
+              } catch (err) {
+                if (err.message.includes('OTP')) {
+                  status.className = 'status error';
+                  status.textContent = 'OTP verification failed';
+                  
+                  // Show error in modal for retry
+                  pendingSession = { sessionId };
+                  document.getElementById('otp-error').textContent = err.message;
+                  document.getElementById('otp-error').style.display = 'block';
+                  document.getElementById('otp-input').value = '';
+                  document.getElementById('otp-submit').disabled = true;
+                  document.getElementById('otp-modal').classList.add('active');
+                  document.getElementById('otp-input').focus();
+                  
+                  cleanup();
+                }
+              }
+            }
+            return;
+          }
+
+          // Terminal data
+          if (term) {
+            term.write(text);
+          }
+        };
+
+        dataChannel.onclose = () => {
+          console.log('Data channel closed');
+          if (term) {
+            term.write('\r\n[Connection closed]\r\n');
+          }
+        };
+
+        // Create and send offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        sendSignal({
+          type: 'offer',
+          sessionId,
+          browserId,
+          from: 'browser',
+          sdp: offer.sdp,
+        });
 
       } catch (err) {
         console.error('Connection failed:', err);
         status.className = 'status error';
         status.textContent = 'Connection failed: ' + err.message;
+        cleanup();
       }
-    };
+    }
 
-    async function openTerminal(stream) {
+    function openTerminal(initialData) {
       document.getElementById('terminal-container').style.display = 'block';
-      
-      await init();
       
       term = new Terminal({
         fontSize: 14,
@@ -152,62 +360,47 @@
           background: '#1a1b26',
           foreground: '#a9b1d6',
         },
+        cursorBlink: true,
       });
 
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
       term.open(document.getElementById('terminal'));
+      fitAddon.fit();
 
-      const encoder = new TextEncoder();
-      const decoder = new TextDecoder();
-
-      // Queue for sending data to stream
-      const sendQueue = [];
-      let sendResolve = null;
-
-      // Input generator for stream sink
-      async function* inputGenerator() {
-        while (currentStream) {
-          if (sendQueue.length > 0) {
-            yield sendQueue.shift();
-          } else {
-            await new Promise(r => { sendResolve = r; });
-          }
-        }
-      }
-
-      // Start piping input to stream
-      stream.sink(inputGenerator()).catch(() => {});
-
-      // Handle terminal input -> queue
+      // Handle terminal input
       term.onData(data => {
-        sendQueue.push(encoder.encode(data));
-        if (sendResolve) {
-          sendResolve();
-          sendResolve = null;
+        if (dataChannel && dataChannel.readyState === 'open') {
+          dataChannel.send(data);
         }
       });
 
-      // Handle stream -> terminal
-      (async () => {
-        try {
-          for await (const chunk of stream.source) {
-            const text = decoder.decode(chunk.subarray());
-            term.write(text);
-          }
-        } catch (err) {
-          console.log('Stream closed:', err);
-          term.write('\r\n[Connection closed]\r\n');
-        }
-      })();
+      // Write any initial data
+      if (initialData) {
+        term.write(initialData);
+      }
 
       term.focus();
     }
 
+    function cleanup() {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (dataChannel) {
+        dataChannel.close();
+        dataChannel = null;
+      }
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+    }
+
     window.closeTerminal = function() {
       document.getElementById('terminal-container').style.display = 'none';
-      if (currentStream) {
-        currentStream.close();
-        currentStream = null;
-      }
+      cleanup();
       if (term) {
         term.dispose();
         term = null;

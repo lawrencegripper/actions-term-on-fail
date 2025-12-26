@@ -6,9 +6,15 @@ const path = require('path');
 async function run() {
   const serverUrl = core.getState('server-url');
   const timeout = parseInt(core.getState('timeout') || '30', 10);
+  const otpSecret = core.getState('otp-secret');
 
   if (!serverUrl) {
     core.warning('No server URL configured, skipping terminal');
+    return;
+  }
+
+  if (!otpSecret) {
+    core.warning('No OTP secret configured, skipping terminal');
     return;
   }
 
@@ -25,6 +31,7 @@ async function run() {
       env: {
         ...process.env,
         SERVER_URL: serverUrl,
+        OTP_SECRET: otpSecret,
       },
       timeout: timeoutMs,
     });

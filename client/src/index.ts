@@ -1,23 +1,37 @@
-import { createLibp2p } from 'libp2p';
-import { webRTC } from '@libp2p/webrtc';
-import { noise } from '@chainsafe/libp2p-noise';
-import { yamux } from '@chainsafe/libp2p-yamux';
 import * as pty from 'node-pty';
+import * as OTPAuth from 'otpauth';
+import nodeDataChannel from 'node-datachannel';
 
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:8080';
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:7373';
 const SHELL = process.env.SHELL || '/bin/bash';
+const OTP_SECRET = process.env.OTP_SECRET || '';
 
-// Google's public STUN servers
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ]
-};
+// Create TOTP instance for validation
+function createTOTP(secret: string): OTPAuth.TOTP {
+  return new OTPAuth.TOTP({
+    issuer: 'ActionTerminal',
+    label: 'Terminal',
+    algorithm: 'SHA1',
+    digits: 6,
+    period: 30,
+    secret: OTPAuth.Secret.fromBase32(secret),
+  });
+}
+
+// Validate OTP code against secret
+function validateOTP(secret: string, code: string): boolean {
+  try {
+    const totp = createTOTP(secret);
+    const delta = totp.validate({ token: code, window: 1 });
+    return delta !== null;
+  } catch (err) {
+    console.error('OTP validation error:', err);
+    return false;
+  }
+}
 
 // Get GitHub Actions OIDC token or dev token
 async function getOIDCToken(): Promise<string> {
-  // Dev mode: use mock token
   if (process.env.DEV_MODE === 'true') {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || 'devuser';
     const repo = process.env.GITHUB_REPOSITORY || 'dev/repo';
@@ -31,8 +45,7 @@ async function getOIDCToken(): Promise<string> {
 
   if (!requestURL || !requestToken) {
     throw new Error(
-      'OIDC token not available. Ensure the workflow has "id-token: write" permission. ' +
-      'For local dev, set DEV_MODE=true'
+      'OIDC token not available. Ensure the workflow has "id-token: write" permission.'
     );
   }
 
@@ -54,139 +67,308 @@ async function getOIDCToken(): Promise<string> {
   return data.value;
 }
 
+interface SignalMessage {
+  type: 'offer' | 'answer' | 'candidate';
+  sessionId: string;
+  browserId: string;
+  from?: 'browser' | 'runner';
+  sdp?: string;
+  candidate?: string;
+  mid?: string;
+}
+
+// Polyfill EventSource for Node.js
+class EventSource {
+  private controller: AbortController | null = null;
+  public onopen: (() => void) | null = null;
+  public onerror: ((err: any) => void) | null = null;
+  public onmessage: ((event: { data: string }) => void) | null = null;
+
+  constructor(private url: string) {
+    this.connect();
+  }
+
+  private async connect() {
+    this.controller = new AbortController();
+    try {
+      const resp = await fetch(this.url, {
+        headers: { 'Accept': 'text/event-stream' },
+        signal: this.controller.signal,
+      });
+
+      if (!resp.ok || !resp.body) {
+        throw new Error(`SSE connection failed: ${resp.status}`);
+      }
+
+      this.onopen?.();
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            this.onmessage?.({ data });
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        this.onerror?.(err);
+        // Reconnect after delay
+        setTimeout(() => this.connect(), 5000);
+      }
+    }
+  }
+
+  close() {
+    this.controller?.abort();
+  }
+}
+
 async function main() {
   console.log('Starting terminal client...');
 
-  // Get OIDC token for authentication
+  // Validate OTP secret
+  if (!OTP_SECRET && process.env.DEV_MODE !== 'true') {
+    console.error('OTP_SECRET is required for secure terminal access');
+    process.exit(1);
+  }
+
+  if (OTP_SECRET) {
+    try {
+      createTOTP(OTP_SECRET);
+      console.log('OTP secret configured - browser must provide valid code');
+    } catch (err) {
+      console.error('Invalid OTP secret:', err);
+      process.exit(1);
+    }
+  }
+
+  // Get OIDC token
   let oidcToken: string;
   try {
     oidcToken = await getOIDCToken();
-    console.log('Obtained OIDC token from GitHub Actions');
+    console.log('Obtained OIDC token');
   } catch (err) {
     console.error('Failed to get OIDC token:', err);
     process.exit(1);
   }
 
-  // Create libp2p node with WebRTC
-  const node = await createLibp2p({
-    transports: [webRTC({ rtcConfiguration: rtcConfig })],
-    connectionEncrypters: [noise()],
-    streamMuxers: [yamux()],
-  });
-
-  await node.start();
-  const peerId = node.peerId.toString();
-  const multiaddrs = node.getMultiaddrs().map(ma => ma.toString());
-
-  console.log('Node started with peer ID:', peerId);
-  console.log('Multiaddrs:', multiaddrs);
-
-  // Register with server using OIDC token
-  const registerPayload = {
-    peerId,
-    multiaddrs,
-    oidcToken,
-  };
-
+  // Generate a unique session ID
+  const sessionId = Math.random().toString(36).substring(2, 15);
+  
+  // Register with server
   try {
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(registerPayload),
+      body: JSON.stringify({ sessionId, oidcToken }),
     });
     if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`Registration failed: ${resp.status} - ${text}`);
+      throw new Error(`Registration failed: ${resp.status} - ${await resp.text()}`);
     }
-    console.log('Registered with server (OIDC validated)');
+    console.log('Registered with server, session:', sessionId);
   } catch (err) {
     console.error('Failed to register:', err);
     process.exit(1);
   }
 
-  // Handle terminal protocol
-  node.handle('/terminal/1.0.0', async ({ stream }) => {
-    console.log('New terminal connection');
+  // Map to track active connections by browserId
+  const connections = new Map<string, {
+    pc: nodeDataChannel.PeerConnection;
+    dc?: nodeDataChannel.DataChannel;
+    pty?: pty.IPty;
+    otpVerified: boolean;
+  }>();
 
-    // Spawn PTY
-    const shell = pty.spawn(SHELL, [], {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-      env: process.env as Record<string, string>,
-    });
-
-    console.log('Shell spawned, PID:', shell.pid);
-
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    // PTY -> Stream (async generator)
-    const ptyToStream = async function* () {
-      const queue: Uint8Array[] = [];
-      let resolve: (() => void) | null = null;
-      let closed = false;
-
-      shell.onData(data => {
-        queue.push(encoder.encode(data));
-        if (resolve) {
-          resolve();
-          resolve = null;
-        }
-      });
-
-      shell.onExit(() => {
-        closed = true;
-        if (resolve) resolve();
-      });
-
-      while (!closed) {
-        if (queue.length > 0) {
-          yield queue.shift()!;
-        } else {
-          await new Promise<void>(r => { resolve = r; });
-        }
-      }
-      // Flush remaining
-      while (queue.length > 0) {
-        yield queue.shift()!;
-      }
-    };
-
-    // Start piping PTY output to stream
-    stream.sink(ptyToStream()).catch(() => {});
-
-    // Stream -> PTY
+  // Send signaling message to server
+  async function sendSignal(msg: SignalMessage) {
     try {
-      for await (const chunk of stream.source) {
-        const text = decoder.decode(chunk.subarray());
-        shell.write(text);
+      await fetch(`${SERVER_URL}/api/signal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg),
+      });
+    } catch (err) {
+      console.error('Failed to send signal:', err);
+    }
+  }
+
+  // Handle incoming signaling messages via SSE
+  console.log('Connecting to signaling channel...');
+  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe?sessionId=${sessionId}`);
+  
+  eventSource.onopen = () => {
+    console.log('Signaling channel connected');
+    console.log('Ready for connections. Press Ctrl+C to exit.');
+    console.log(`Connect at: ${SERVER_URL}`);
+  };
+
+  eventSource.onerror = (err) => {
+    console.error('Signaling channel error:', err);
+  };
+
+  eventSource.onmessage = async (event) => {
+    try {
+      const msg: SignalMessage = JSON.parse(event.data);
+      console.log('Received signal:', msg.type, 'from browser:', msg.browserId);
+
+      if (msg.type === 'offer' && msg.sdp) {
+        // New connection request from browser
+        const pc = new nodeDataChannel.PeerConnection(sessionId, {
+          iceServers: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
+        });
+
+        const connState = {
+          pc,
+          dc: undefined as nodeDataChannel.DataChannel | undefined,
+          pty: undefined as pty.IPty | undefined,
+          otpVerified: !OTP_SECRET && process.env.DEV_MODE === 'true',
+        };
+        connections.set(msg.browserId, connState);
+
+        pc.onLocalCandidate((candidate, mid) => {
+          console.log('Sending ICE candidate');
+          sendSignal({
+            type: 'candidate',
+            sessionId,
+            browserId: msg.browserId,
+            from: 'runner',
+            candidate,
+            mid,
+          });
+        });
+
+        pc.onStateChange((state) => {
+          console.log('Connection state:', state);
+          if (state === 'closed' || state === 'failed') {
+            if (connState.pty) {
+              connState.pty.kill();
+            }
+            connections.delete(msg.browserId);
+          }
+        });
+
+        pc.onDataChannel((dc) => {
+          console.log('Data channel opened:', dc.getLabel());
+          connState.dc = dc;
+
+          let otpBuffer = '';
+
+          dc.onMessage((data) => {
+            const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
+
+            // OTP verification phase
+            if (!connState.otpVerified) {
+              otpBuffer += text;
+              try {
+                const parsed = JSON.parse(otpBuffer.trim());
+                if (parsed.type === 'otp-response' && parsed.code) {
+                  if (validateOTP(OTP_SECRET, parsed.code)) {
+                    connState.otpVerified = true;
+                    console.log('OTP verified successfully');
+                    dc.sendMessage(JSON.stringify({ type: 'otp-result', success: true }) + '\n');
+                    
+                    // Start PTY
+                    const shell = pty.spawn(SHELL, [], {
+                      name: 'xterm-256color',
+                      cols: 80,
+                      rows: 24,
+                      cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+                      env: process.env as Record<string, string>,
+                    });
+                    connState.pty = shell;
+                    console.log('PTY started, PID:', shell.pid);
+
+                    shell.onData((shellData) => {
+                      try {
+                        dc.sendMessage(shellData);
+                      } catch {}
+                    });
+
+                    shell.onExit(() => {
+                      console.log('Shell exited');
+                      pc.close();
+                      connections.delete(msg.browserId);
+                    });
+                  } else {
+                    console.log('OTP verification failed');
+                    dc.sendMessage(JSON.stringify({ type: 'otp-result', success: false, message: 'Invalid OTP code' }) + '\n');
+                    setTimeout(() => pc.close(), 1000);
+                  }
+                  otpBuffer = '';
+                }
+              } catch {
+                // Incomplete JSON, wait for more data
+                if (otpBuffer.length > 1024) {
+                  otpBuffer = '';
+                  dc.sendMessage(JSON.stringify({ type: 'otp-result', success: false, message: 'Invalid request' }) + '\n');
+                }
+              }
+              return;
+            }
+
+            // Terminal data - write to PTY
+            if (connState.pty) {
+              connState.pty.write(text);
+            }
+          });
+
+          dc.onClosed(() => {
+            console.log('Data channel closed');
+            if (connState.pty) {
+              connState.pty.kill();
+            }
+            connections.delete(msg.browserId);
+          });
+        });
+
+        // Set remote description (offer) and generate answer
+        pc.setRemoteDescription(msg.sdp, 'offer');
+        
+        pc.onLocalDescription((sdp, type) => {
+          console.log('Sending SDP answer');
+          sendSignal({
+            type: 'answer',
+            sessionId,
+            browserId: msg.browserId,
+            from: 'runner',
+            sdp,
+          });
+        });
+
+      } else if (msg.type === 'candidate' && msg.candidate) {
+        const conn = connections.get(msg.browserId);
+        if (conn) {
+          console.log('Adding ICE candidate');
+          conn.pc.addRemoteCandidate(msg.candidate, msg.mid || '0');
+        }
       }
     } catch (err) {
-      console.log('Stream ended');
+      console.error('Error handling signal:', err);
     }
-
-    shell.kill();
-  });
+  };
 
   // Heartbeat
-  const heartbeat = async () => {
+  setInterval(async () => {
     try {
       await fetch(`${SERVER_URL}/api/sessions/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ peerId }),
+        body: JSON.stringify({ sessionId }),
       });
-    } catch (err) {
-      console.error('Heartbeat failed:', err);
-    }
-  };
-
-  setInterval(heartbeat, 60000);
-
-  console.log('Ready for connections. Press Ctrl+C to exit.');
-  console.log(`Connect at: ${SERVER_URL}`);
+    } catch {}
+  }, 60000);
 
   // Keep alive
   await new Promise(() => {});

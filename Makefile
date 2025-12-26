@@ -26,6 +26,25 @@ run-server:
 run-client:
 	cd client && npm start
 
+# Run in dev mode - starts server in background, then client
+# Access http://localhost:7373/auth/github to login first
+run-devmode:
+	@echo "Starting server in dev mode..."
+	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
+	@cd server && DEV_MODE=true DEV_USER=$(USER) go run . &
+	@sleep 2
+	@echo ""
+	@echo "Server running at http://localhost:7373"
+	@echo "Login at: http://localhost:7373/auth/github?user=$(USER)"
+	@echo ""
+	@echo "Starting client..."
+	@cd client && DEV_MODE=true OTP_SECRET=JBSWY3DPEHPK3PXP npm start
+
+# Stop dev mode services
+stop-devmode:
+	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
+	@echo "Dev services stopped"
+
 # Run server and client together (use with tmux or separate terminals)
 run: run-server
 
@@ -87,6 +106,8 @@ help:
 	@echo "  build-client   - Build TypeScript client"
 	@echo "  run-server     - Run server locally (dev mode)"
 	@echo "  run-client     - Run client locally"
+	@echo "  run-devmode    - Run server and client in dev mode"
+	@echo "  stop-devmode   - Stop dev mode services"
 	@echo "  docker-build   - Build Docker images"
 	@echo "  docker-up      - Start all services with Docker"
 	@echo "  docker-down    - Stop Docker services"

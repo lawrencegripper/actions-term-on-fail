@@ -10,6 +10,9 @@ inputs:
     description: 'How long to wait for connection (minutes)'
     required: false
     default: '30'
+  otp-secret:
+    description: 'TOTP secret for terminal access (base32 encoded). Browser must provide valid OTP code before terminal access is granted.'
+    required: true
 
 runs:
   using: 'node20'

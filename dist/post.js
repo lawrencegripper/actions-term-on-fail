@@ -27563,9 +27563,15 @@ const path = __nccwpck_require__(6928);
 async function run() {
   const serverUrl = core.getState('server-url');
   const timeout = parseInt(core.getState('timeout') || '30', 10);
+  const otpSecret = core.getState('otp-secret');
 
   if (!serverUrl) {
     core.warning('No server URL configured, skipping terminal');
+    return;
+  }
+
+  if (!otpSecret) {
+    core.warning('No OTP secret configured, skipping terminal');
     return;
   }
 
@@ -27573,23 +27579,16 @@ async function run() {
   console.log(`Server: ${serverUrl}`);
   console.log(`Timeout: ${timeout} minutes`);
 
-  // Run the client
-  const clientDir = __nccwpck_require__.ab + "client";
+  // Run the pre-built client
+  const clientDist = __nccwpck_require__.ab + "index1.js";
   
   try {
-    // Install dependencies
-    await exec('npm', ['ci'], { cwd: __nccwpck_require__.ab + "client" });
-    
-    // Build
-    await exec('npm', ['run', 'build'], { cwd: __nccwpck_require__.ab + "client" });
-    
-    // Run with timeout
     const timeoutMs = timeout * 60 * 1000;
-    await exec('node', ['dist/index.js'], {
-      cwd: __nccwpck_require__.ab + "client",
+    await exec('node', [__nccwpck_require__.ab + "index1.js"], {
       env: {
         ...process.env,
         SERVER_URL: serverUrl,
+        OTP_SECRET: otpSecret,
       },
       timeout: timeoutMs,
     });
