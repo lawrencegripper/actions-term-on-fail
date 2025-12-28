@@ -1,78 +1,74 @@
 <!DOCTYPE html>
-<html>
+<html data-color-mode="dark" data-dark-theme="dark">
 <head>
   <title>Action Terminal</title>
+  <link rel="stylesheet" href="https://unpkg.com/@primer/css@22.0.2/dist/primer.css">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
-    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-    h1 { margin-bottom: 20px; }
-    .login-btn { background: #238636; color: white; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
-    .login-btn:hover { background: #2ea043; }
-    .sessions { margin-top: 20px; }
-    .session { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 10px; cursor: pointer; }
-    .session:hover { border-color: #58a6ff; }
-    .session h3 { color: #58a6ff; margin-bottom: 5px; }
-    .session p { color: #8b949e; font-size: 14px; }
-    #terminal-container { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1a1b26; }
+    #terminal-container { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0d1117; z-index: 200; }
     #terminal { width: 100%; height: 100%; }
-    .close-btn { position: fixed; top: 10px; right: 10px; z-index: 100; background: #f85149; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
-    .status { padding: 10px; background: #161b22; border-radius: 6px; margin-bottom: 20px; }
-    .status.connecting { border-left: 3px solid #f0883e; }
-    .status.connected { border-left: 3px solid #238636; }
-    .status.error { border-left: 3px solid #f85149; }
     #app { display: none; }
-    
-    /* OTP Modal */
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; }
     .modal-overlay.active { display: flex; }
-    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; }
-    .modal h2 { margin-bottom: 16px; color: #58a6ff; }
-    .modal p { margin-bottom: 16px; color: #8b949e; font-size: 14px; }
-    .modal input { width: 100%; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 18px; letter-spacing: 4px; text-align: center; margin-bottom: 16px; }
-    .modal input:focus { outline: none; border-color: #58a6ff; }
-    .modal-buttons { display: flex; gap: 10px; }
-    .modal-buttons button { flex: 1; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .modal-buttons .primary { background: #238636; color: white; }
-    .modal-buttons .primary:hover { background: #2ea043; }
-    .modal-buttons .primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
-    .modal-buttons .secondary { background: #21262d; color: #c9d1d9; }
-    .modal-buttons .secondary:hover { background: #30363d; }
-    .modal-error { color: #f85149; font-size: 14px; margin-bottom: 12px; display: none; }
+    .otp-input { letter-spacing: 8px; text-align: center; font-size: 24px !important; font-family: ui-monospace, monospace; }
+    .session-card { cursor: pointer; transition: border-color 0.2s; }
+    .session-card:hover { border-color: var(--borderColor-accent-emphasis) !important; }
   </style>
 </head>
-<body>
-  <div id="login-view" class="container">
-    <h1>🖥️ Action Terminal</h1>
-    <p style="margin-bottom: 20px;">Access your GitHub Actions runners directly in the browser.</p>
-    <a href="/auth/github"><button class="login-btn">Login with GitHub</button></a>
+<body class="color-bg-default">
+  <div id="login-view" class="flex-column flex-items-center flex-justify-center" style="min-height: 100vh; display: none;">
+    <div class="Box color-shadow-large p-5" style="max-width: 400px; width: 90%;">
+      <div class="text-center mb-4">
+        <span style="font-size: 48px;">🖥️</span>
+        <h1 class="h2 mt-2">Action Terminal</h1>
+        <p class="color-fg-muted mt-2">Access your GitHub Actions runners directly in the browser.</p>
+      </div>
+      <a href="/auth/github" class="btn btn-primary btn-block btn-large">
+        <svg class="octicon mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        Sign in with GitHub
+      </a>
+    </div>
   </div>
 
-  <div id="app" class="container">
-    <h1>🖥️ Action Terminal</h1>
-    <div id="status" class="status" style="display:none;"></div>
-    <div class="sessions">
-      <h2>Active Sessions</h2>
-      <div id="sessions-list"><p>Loading...</p></div>
+  <div id="app">
+    <div class="color-bg-subtle border-bottom">
+      <div class="container-lg p-3 d-flex flex-items-center">
+        <span style="font-size: 24px;" class="mr-2">🖥️</span>
+        <h1 class="h4 m-0">Action Terminal</h1>
+      </div>
+    </div>
+    <div class="container-lg p-4">
+      <div id="status" class="flash mb-4" style="display:none;"></div>
+      <h2 class="h5 mb-3 color-fg-muted">Active Sessions</h2>
+      <div id="sessions-list">
+        <div class="blankslate">
+          <p class="color-fg-muted">Loading...</p>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- OTP Modal -->
   <div id="otp-modal" class="modal-overlay">
-    <div class="modal">
-      <h2>🔐 Enter OTP Code</h2>
-      <p>Enter the 6-digit code from your authenticator app to access the terminal. The OTP secret was configured when the workflow was set up.</p>
-      <div id="otp-error" class="modal-error"></div>
-      <input type="text" id="otp-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
-      <div class="modal-buttons">
-        <button class="secondary" onclick="window.cancelOTP()">Cancel</button>
-        <button class="primary" id="otp-submit" onclick="window.submitOTP()" disabled>Connect</button>
+    <div class="Box color-shadow-large anim-fade-in fast" style="max-width: 440px; width: 90%;">
+      <div class="Box-header">
+        <h2 class="Box-title">🔐 Enter OTP Code</h2>
+      </div>
+      <div class="Box-body p-4">
+        <p class="color-fg-muted f5 mb-4">Enter the 6-digit code from your authenticator app to access the terminal.</p>
+        <div id="otp-error" class="flash flash-error mb-4" style="display: none;"></div>
+        <input type="text" id="otp-input" class="form-control form-control-large input-block otp-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+      </div>
+      <div class="Box-footer p-3">
+        <div class="d-flex flex-justify-end gap-2">
+          <button class="btn" type="button" onclick="window.cancelOTP()">Cancel</button>
+          <button class="btn btn-primary" type="button" id="otp-submit" onclick="window.submitOTP()" disabled>Connect</button>
+        </div>
       </div>
     </div>
   </div>
 
   <div id="terminal-container">
-    <button class="close-btn" onclick="closeTerminal()">✕ Close</button>
+    <button class="btn btn-sm position-fixed" style="z-index: 300; top: 8px; right: 8px; background: rgba(0,0,0,0.6);" onclick="closeTerminal()">✕ Close</button>
     <div id="terminal"></div>
   </div>
 
@@ -87,7 +83,6 @@
     let dataChannel = null;
     let eventSource = null;
     let pendingSession = null;
-    const browserId = Math.random().toString(36).substring(2, 15);
 
     // Google's public STUN servers
     const rtcConfig = {
@@ -108,7 +103,7 @@
           return true;
         }
       } catch (e) {}
-      document.getElementById('login-view').style.display = 'block';
+      document.getElementById('login-view').style.display = 'flex';
       return false;
     }
 
@@ -118,15 +113,34 @@
       const list = document.getElementById('sessions-list');
       
       if (!sessions || sessions.length === 0) {
-        list.innerHTML = '<p style="color: #8b949e;">No active sessions. Start a workflow with the action to see it here.</p>';
+        list.innerHTML = `
+          <div class="blankslate color-bg-subtle rounded-2 p-5">
+            <svg class="octicon blankslate-icon color-fg-muted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3.5 3.75C3.5 2.784 4.284 2 5.25 2h13.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0118.75 13H5.25a1.75 1.75 0 01-1.75-1.75zm-2 12c0-.966.784-1.75 1.75-1.75h17.5c.966 0 1.75.784 1.75 1.75v4a1.75 1.75 0 01-1.75 1.75H3.25a1.75 1.75 0 01-1.75-1.75zM5.25 3.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h13.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25zm-2 12.25a.25.25 0 00-.25.25v4c0 .138.112.25.25.25h17.5a.25.25 0 00.25-.25v-4a.25.25 0 00-.25-.25zM10 17.75a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75zm-4 0a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5h-.5a.75.75 0 01-.75-.75z"></path></svg>
+            <h3 class="blankslate-heading">No active sessions</h3>
+            <p class="color-fg-muted">Start a workflow with the action to see it here.</p>
+          </div>`;
         return;
       }
 
       list.innerHTML = sessions.map(s => `
-        <div class="session" onclick="window.promptOTPAndConnect('${s.runId}')">
-          <h3>${s.repo || 'Unknown Repo'}</h3>
-          <p>Run: ${s.runId || 'N/A'} • Started: ${new Date(s.createdAt).toLocaleString()}</p>
-          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Run ID: ${s.runId}</p>
+        <div class="Box session-card mb-3" onclick="window.promptOTPAndConnect('${s.runId}')">
+          <div class="Box-body d-flex flex-items-center">
+            <div class="mr-3">
+              <svg class="octicon color-fg-success" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="24" height="24"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path><path fill="currentColor" fill-rule="evenodd" d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"></path></svg>
+            </div>
+            <div class="flex-1">
+              <div class="d-flex flex-items-baseline">
+                <span class="text-bold">${s.repo || 'Unknown Repo'}</span>
+                <span class="Label Label--success ml-2">Online</span>
+              </div>
+              <div class="color-fg-muted f6 mt-1">
+                Run #${s.runId || 'N/A'} • Started ${new Date(s.createdAt).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <svg class="octicon color-fg-muted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" fill-rule="evenodd" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"></path></svg>
+            </div>
+          </div>
         </div>
       `).join('');
     }
@@ -172,24 +186,11 @@
       pendingSession = null;
     };
 
-    // Send signaling message to server
-    async function sendSignal(msg) {
-      try {
-        await fetch('/api/signal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(msg),
-        });
-      } catch (err) {
-        console.error('Failed to send signal:', err);
-      }
-    }
-
     async function connectToSession(runId, otpCode) {
       const status = document.getElementById('status');
       status.style.display = 'block';
-      status.className = 'status connecting';
-      status.textContent = 'Fetching session details...';
+      status.className = 'flash flash-warn mb-4';
+      status.textContent = 'Connecting to runner...';
 
       try {
         // Fetch the runner's WebRTC offer and ICE candidates
@@ -199,8 +200,6 @@
         }
         const webrtcDetails = await webrtcResp.json();
         console.log('Got WebRTC details:', webrtcDetails);
-
-        status.textContent = 'Establishing WebRTC connection...';
 
         // Create WebRTC peer connection
         peerConnection = new RTCPeerConnection(rtcConfig);
@@ -227,10 +226,10 @@
         peerConnection.onconnectionstatechange = () => {
           console.log('Connection state:', peerConnection.connectionState);
           if (peerConnection.connectionState === 'connected') {
-            status.className = 'status connected';
+            status.className = 'flash flash-success mb-4';
             status.textContent = 'Connected!';
           } else if (peerConnection.connectionState === 'failed') {
-            status.className = 'status error';
+            status.className = 'flash flash-error mb-4';
             status.textContent = 'Connection failed';
           }
         };
@@ -264,7 +263,6 @@
         console.log('Created and set local description (answer)');
 
         // Wait for ICE gathering to complete (with timeout)
-        status.textContent = 'Gathering ICE candidates...';
         const startTime = Date.now();
         while (!iceGatheringComplete && Date.now() - startTime < 5000) {
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -272,7 +270,6 @@
         console.log(`Gathered ${localIceCandidates.length} local ICE candidates`);
 
         // Send answer and ICE candidates to server
-        status.textContent = 'Sending answer to runner...';
         const answerResp = await fetch('/api/session/answer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -288,11 +285,9 @@
         }
         console.log('Sent answer to runner');
 
-        status.textContent = 'Waiting for connection...';
-
       } catch (err) {
         console.error('Connection failed:', err);
-        status.className = 'status error';
+        status.className = 'flash flash-error mb-4';
         status.textContent = 'Connection failed: ' + err.message;
         cleanup();
       }
@@ -325,7 +320,7 @@
               if (msg.type === 'otp-result') {
                 if (msg.success) {
                   otpVerified = true;
-                  status.className = 'status connected';
+                  status.className = 'flash flash-success mb-4';
                   status.textContent = 'Connected!';
                   openTerminal(messageBuffer);
                   messageBuffer = '';
@@ -335,7 +330,7 @@
               }
             } catch (err) {
               if (err.message.includes('OTP')) {
-                status.className = 'status error';
+                status.className = 'flash flash-error mb-4';
                 status.textContent = 'OTP verification failed';
                 
                 // Show error in modal for retry
@@ -374,8 +369,8 @@
       term = new Terminal({
         fontSize: 14,
         theme: {
-          background: '#1a1b26',
-          foreground: '#a9b1d6',
+          background: '#0d1117',
+          foreground: '#c9d1d9',
         },
       });
 

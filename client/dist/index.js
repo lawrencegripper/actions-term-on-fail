@@ -154,10 +154,9 @@ async function main() {
     console.error("No local description (offer) generated");
     process.exit(1);
   }
-  console.log(`Gathered ICE candidates ${JSON.stringify(iceCandidates)}`);
+  console.log(`Gathered ICE candidates ${iceCandidates.length}`);
   try {
     const body = JSON.stringify({ ice: iceCandidates, offer });
-    console.log(body);
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + oidcToken },

@@ -169,7 +169,7 @@ async function main() {
     iceServers: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
   });
 
-  const iceCandidates: any = [];
+  const iceCandidates: Array<any> = [];
 
   pc.onLocalCandidate((candidate: string, mid: string) => {
     iceCandidates.push({ candidate, mid });
@@ -199,12 +199,11 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Gathered ICE candidates ${JSON.stringify(iceCandidates)}`);
+  console.log(`Gathered ICE candidates ${iceCandidates.length}`);
 
   // Register with server
   try {
     const body = JSON.stringify({ ice: iceCandidates, offer: offer })
-    console.log(body)
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + oidcToken },
@@ -333,8 +332,6 @@ async function main() {
   eventSource.onmessage = async (event) => {
     try {
       const msg: SignalMessage = JSON.parse(event.data);
-      console.log('Received signal:', msg.type, event.data);
-
       if (msg.type === 'answer' && msg.answer) {
         // Set the browser's answer as remote description
         console.log('Setting remote description (answer)');
@@ -343,7 +340,6 @@ async function main() {
       } else if (msg.type === 'candidate' && msg.candidate && msg.mid) {
         // Add browser's ICE candidate
         if (remoteDescriptionSet) {
-          console.log('Adding remote ICE candidate:', msg.candidate);
           pc.addRemoteCandidate(msg.candidate, msg.mid);
         } else {
           console.log('Queuing ICE candidate (remote description not set yet)');
