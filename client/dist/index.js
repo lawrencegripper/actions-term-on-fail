@@ -15,6 +15,16 @@ function createTOTP(secret) {
     secret: OTPAuth.Secret.fromBase32(secret)
   });
 }
+function validateOTP(secret, code) {
+  try {
+    const totp = createTOTP(secret);
+    const delta = totp.validate({ token: code, window: 1 });
+    return delta !== null;
+  } catch (err) {
+    console.error("OTP validation error:", err);
+    return false;
+  }
+}
 async function getOIDCToken() {
   if (process.env.DEV_MODE === "true") {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || "devuser";
@@ -146,7 +156,7 @@ async function main() {
   }
   console.log(`Gathered ICE candidates ${JSON.stringify(iceCandidates)}`);
   try {
-    const body = JSON.stringify({ ice: iceCandidates, description: offer });
+    const body = JSON.stringify({ ice: iceCandidates, offer });
     console.log(body);
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: "POST",
@@ -170,7 +180,7 @@ async function main() {
   });
   console.log("PTY started, PID:", shell.pid);
   console.log("Connecting to signaling channel...");
-  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, oidcToken);
+  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, "Bearer " + oidcToken);
   eventSource.onopen = () => {
     console.log("SRE channel connected");
     console.log("Waiting for server to signal browser ICE Candidates. Press Ctrl+C to exit.");
@@ -179,32 +189,86 @@ async function main() {
   eventSource.onerror = (err) => {
     console.error("SRE channel error:", err);
   };
+  pc.onStateChange((state) => {
+    console.log("Connection state:", state);
+  });
+  let dcOpen = false;
+  let otpVerified = false;
+  let shellBuffer = [];
+  dc.onOpen(() => {
+    console.log("Data channel opened, waiting for OTP verification");
+    dcOpen = true;
+  });
+  dc.onMessage((data) => {
+    const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+    if (!otpVerified) {
+      try {
+        const msg = JSON.parse(text);
+        if (msg.type === "otp-response" && msg.code) {
+          console.log("Received OTP code, validating...");
+          const isValid = !OTP_SECRET || validateOTP(OTP_SECRET, msg.code);
+          if (isValid) {
+            console.log("OTP verified successfully");
+            otpVerified = true;
+            dc.sendMessage(JSON.stringify({ type: "otp-result", success: true }) + "\n");
+            console.log(`Flushing ${shellBuffer.length} buffered shell messages`);
+            for (const shellData of shellBuffer) {
+              try {
+                dc.sendMessage(shellData);
+              } catch (e) {
+                console.log("Error sending buffered data:", e);
+              }
+            }
+            shellBuffer = [];
+          } else {
+            console.log("OTP verification failed - invalid code");
+            dc.sendMessage(JSON.stringify({ type: "otp-result", success: false, message: "Invalid OTP code" }) + "\n");
+            setTimeout(() => {
+              dc.close();
+            }, 100);
+          }
+        }
+      } catch (e) {
+        console.log("Received non-JSON message before OTP verification, ignoring");
+      }
+      return;
+    }
+    shell.write(text);
+  });
+  shell.onData((shellData) => {
+    if (dcOpen && otpVerified) {
+      try {
+        dc.sendMessage(shellData);
+      } catch (e) {
+        console.log(e);
+      }
+    } else {
+      shellBuffer.push(shellData);
+    }
+  });
+  dc.onClosed(() => {
+    console.log("Data channel closed");
+    dcOpen = false;
+    shell.kill();
+  });
+  let remoteDescriptionSet = false;
   eventSource.onmessage = async (event) => {
     try {
       const msg = JSON.parse(event.data);
-      console.log("Received signal:", JSON.stringify(msg), event.data);
-      pc.addRemoteCandidate(msg.candidate, msg.mid);
-      pc.onStateChange((state) => {
-        console.log("Connection state:", state);
-      });
-      pc.onDataChannel((dc2) => {
-        console.log("Data channel opened:", dc2.getLabel());
-        dc2.onMessage((data) => {
-          const text = typeof data === "string" ? data : new TextDecoder().decode(data);
-          shell.write(text);
-        });
-        shell.onData((shellData) => {
-          try {
-            dc2.sendMessage(shellData);
-          } catch (e) {
-            console.log(e);
-          }
-        });
-        dc2.onClosed(() => {
-          console.log("Data channel closed");
-          shell.kill();
-        });
-      });
+      console.log("Received signal:", msg.type, event.data);
+      if (msg.type === "answer" && msg.answer) {
+        console.log("Setting remote description (answer)");
+        pc.setRemoteDescription(msg.answer.sdp, msg.answer.type);
+        remoteDescriptionSet = true;
+      } else if (msg.type === "candidate" && msg.candidate && msg.mid) {
+        if (remoteDescriptionSet) {
+          console.log("Adding remote ICE candidate:", msg.candidate);
+          pc.addRemoteCandidate(msg.candidate, msg.mid);
+        } else {
+          console.log("Queuing ICE candidate (remote description not set yet)");
+          pc.addRemoteCandidate(msg.candidate, msg.mid);
+        }
+      }
     } catch (err) {
       console.error("Error handling signal:", err);
     }

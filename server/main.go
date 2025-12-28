@@ -81,7 +81,8 @@ func main() {
 
 	// API endpoints
 	http.HandleFunc("/api/sessions", handleSessions)
-	http.HandleFunc("/api/session/connect", handleSessionConnect)
+	http.HandleFunc("/api/session/webrtc", handleSessionGetWebRTCDetails)
+	http.HandleFunc("/api/session/answer", handleSessionSendAnswer)
 	http.HandleFunc("/api/sessions/register", handleRegister)
 	http.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
 	http.HandleFunc("/auth/github", handleGitHubAuth)
@@ -315,25 +316,128 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleSessionConnect(w http.ResponseWriter, r *http.Request) {
+func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Get user from JWT cookie
 	username, err := usernameFromCookieOrError(r)
-
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	runID := r.URL.Query().Get("runid")
+	runID := r.URL.Query().Get("runId")
 	if runID == "" {
-		http.Error(w, "missing runid parameter", http.StatusBadRequest)
+		http.Error(w, "missing runId parameter", http.StatusBadRequest)
 		return
 	}
 
-	sess := runIdToSessions[username]
+	sessionsMu.RLock()
+	sess, ok := runIdToSessions[runID]
+	sessionsMu.RUnlock()
 
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify the user owns this session
+	if sess.Actor != username {
+		http.Error(w, "unauthorized: session belongs to different user", http.StatusForbidden)
+		return
+	}
+
+	// Return the ICE candidates and offer
+	resp := map[string]interface{}{
+		"ice":   sess.ICE,
+		"offer": sess.Offer,
+		"runId": sess.RunID,
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get user from JWT cookie
+	username, err := usernameFromCookieOrError(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		RunID  string          `json:"runId"`
+		Answer json.RawMessage `json:"answer"`
+		ICE    json.RawMessage `json:"ice"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	sessionsMu.RLock()
+	sess, ok := runIdToSessions[req.RunID]
+	sessionsMu.RUnlock()
+
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify the user owns this session
+	if sess.Actor != username {
+		http.Error(w, "unauthorized: session belongs to different user", http.StatusForbidden)
+		return
+	}
+
+	// Forward answer and ICE candidates to the runner via SSE
+	sseClientsMu.RLock()
+	client, ok := sseClients[sess.Actor]
+	sseClientsMu.RUnlock()
+
+	if !ok {
+		http.Error(w, "runner not connected", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Send answer message
+	answerMsg, _ := json.Marshal(map[string]interface{}{
+		"type":   "answer",
+		"answer": req.Answer,
+	})
+	select {
+	case client.Messages <- answerMsg:
+	default:
+		log.Printf("Failed to send answer to runner %s: channel full", sess.Actor)
+	}
+
+	// Send ICE candidates
+	var iceCandidates []struct {
+		Candidate string `json:"candidate"`
+		Mid       string `json:"mid"`
+	}
+	if err := json.Unmarshal(req.ICE, &iceCandidates); err == nil {
+		for _, ice := range iceCandidates {
+			iceMsg, _ := json.Marshal(map[string]interface{}{
+				"type":      "candidate",
+				"candidate": ice.Candidate,
+				"mid":       ice.Mid,
+			})
+			select {
+			case client.Messages <- iceMsg:
+			default:
+				log.Printf("Failed to send ICE candidate to runner %s: channel full", sess.Actor)
+			}
+		}
+	}
+
+	log.Printf("Forwarded answer and %d ICE candidates to runner %s", len(iceCandidates), sess.Actor)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // handleSessions - Get sessions for authenticated user
@@ -341,8 +445,9 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Get user from JWT cookie
-	username, err := usernameFromCookieOrError(r, w)
+	username, err := usernameFromCookieOrError(r)
 	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 

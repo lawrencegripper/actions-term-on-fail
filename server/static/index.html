@@ -122,17 +122,17 @@
       }
 
       list.innerHTML = sessions.map(s => `
-        <div class="session" onclick="window.promptOTPAndConnect('${s.sessionId}')">
+        <div class="session" onclick="window.promptOTPAndConnect('${s.runId}')">
           <h3>${s.repo || 'Unknown Repo'}</h3>
           <p>Run: ${s.runId || 'N/A'} • Started: ${new Date(s.createdAt).toLocaleString()}</p>
-          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Session: ${s.sessionId}</p>
+          <p style="font-family: monospace; font-size: 12px; margin-top: 5px;">Run ID: ${s.runId}</p>
         </div>
       `).join('');
     }
 
     // Show OTP modal and wait for code
-    window.promptOTPAndConnect = function(sessionId) {
-      pendingSession = { sessionId };
+    window.promptOTPAndConnect = function(runId) {
+      pendingSession = { runId };
       
       // Reset modal state
       document.getElementById('otp-input').value = '';
@@ -167,7 +167,7 @@
       document.getElementById('otp-modal').classList.remove('active');
       
       // Connect with OTP
-      await connectToSession(pendingSession.sessionId, otpCode);
+      await connectToSession(pendingSession.runId, otpCode);
       pendingSession = null;
     };
 
@@ -184,164 +184,110 @@
       }
     }
 
-    async function connectToSession(sessionId, otpCode) {
+    async function connectToSession(runId, otpCode) {
       const status = document.getElementById('status');
       status.style.display = 'block';
       status.className = 'status connecting';
-      status.textContent = 'Connecting to runner...';
-
-      // Queue for ICE candidates received before remote description is set
-      let pendingCandidates = [];
-      let remoteDescriptionSet = false;
+      status.textContent = 'Fetching session details...';
 
       try {
-        // Create WebRTC peer connection FIRST
+        // Fetch the runner's WebRTC offer and ICE candidates
+        const webrtcResp = await fetch(`/api/session/webrtc?runId=${runId}`);
+        if (!webrtcResp.ok) {
+          throw new Error(`Failed to get WebRTC details: ${webrtcResp.status}`);
+        }
+        const webrtcDetails = await webrtcResp.json();
+        console.log('Got WebRTC details:', webrtcDetails);
+
+        status.textContent = 'Establishing WebRTC connection...';
+
+        // Create WebRTC peer connection
         peerConnection = new RTCPeerConnection(rtcConfig);
+
+        // Collect our ICE candidates
+        const localIceCandidates = [];
+        let iceGatheringComplete = false;
 
         peerConnection.onicecandidate = (event) => {
           if (event.candidate) {
-            sendSignal({
-              type: 'candidate',
-              sessionId,
-              browserId,
-              from: 'browser',
+            localIceCandidates.push({
               candidate: event.candidate.candidate,
               mid: event.candidate.sdpMid,
             });
           }
         };
 
+        peerConnection.onicegatheringstatechange = () => {
+          if (peerConnection.iceGatheringState === 'complete') {
+            iceGatheringComplete = true;
+          }
+        };
+
         peerConnection.onconnectionstatechange = () => {
           console.log('Connection state:', peerConnection.connectionState);
-          if (peerConnection.connectionState === 'failed') {
+          if (peerConnection.connectionState === 'connected') {
+            status.className = 'status connected';
+            status.textContent = 'Connected!';
+          } else if (peerConnection.connectionState === 'failed') {
             status.className = 'status error';
             status.textContent = 'Connection failed';
           }
         };
 
-        // Subscribe to signaling messages via SSE
-        eventSource = new EventSource(`/api/signal/subscribe?browserId=${browserId}`);
-        
-        eventSource.onmessage = async (event) => {
-          const msg = JSON.parse(event.data);
-          console.log('Received signal:', msg.type);
-          
-          if (msg.type === 'answer' && msg.sdp) {
-            await peerConnection.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
-            remoteDescriptionSet = true;
-            // Process any queued candidates
-            for (const candidate of pendingCandidates) {
-              try {
-                await peerConnection.addIceCandidate(candidate);
-              } catch (e) {
-                console.warn('Failed to add queued ICE candidate:', e);
-              }
-            }
-            pendingCandidates = [];
-          } else if (msg.type === 'candidate' && msg.candidate) {
-            const candidate = { candidate: msg.candidate, sdpMid: msg.mid || '0' };
-            if (remoteDescriptionSet) {
-              try {
-                await peerConnection.addIceCandidate(candidate);
-              } catch (e) {
-                console.warn('Failed to add ICE candidate:', e);
-              }
-            } else {
-              // Queue the candidate
-              pendingCandidates.push(candidate);
-            }
+        // Handle incoming data channel from runner
+        peerConnection.ondatachannel = (event) => {
+          console.log('Received data channel:', event.channel.label);
+          dataChannel = event.channel;
+          setupDataChannel(dataChannel, otpCode, runId, status);
+        };
+
+        // Set the runner's offer as remote description
+        const offer = webrtcDetails.offer;
+        await peerConnection.setRemoteDescription({ type: offer.type || 'offer', sdp: offer.sdp });
+        console.log('Set remote description (offer)');
+
+        // Add the runner's ICE candidates
+        const runnerIceCandidates = webrtcDetails.ice || [];
+        for (const ice of runnerIceCandidates) {
+          try {
+            await peerConnection.addIceCandidate({ candidate: ice.candidate, sdpMid: ice.mid });
+          } catch (e) {
+            console.warn('Failed to add runner ICE candidate:', e);
           }
-        };
+        }
+        console.log(`Added ${runnerIceCandidates.length} runner ICE candidates`);
 
-        eventSource.onerror = (err) => {
-          console.error('SSE error:', err);
-        };
+        // Create answer
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        console.log('Created and set local description (answer)');
 
-        // Wait for SSE to connect
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Wait for ICE gathering to complete (with timeout)
+        status.textContent = 'Gathering ICE candidates...';
+        const startTime = Date.now();
+        while (!iceGatheringComplete && Date.now() - startTime < 5000) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`Gathered ${localIceCandidates.length} local ICE candidates`);
 
-        // Create data channel
-        dataChannel = peerConnection.createDataChannel('terminal', { ordered: true });
-        
-        dataChannel.onopen = () => {
-          console.log('Data channel opened');
-          status.textContent = 'Verifying OTP...';
-          
-          // Send OTP code for verification
-          dataChannel.send(JSON.stringify({ type: 'otp-response', code: otpCode }));
-        };
-
-        let otpVerified = false;
-        let messageBuffer = '';
-
-        dataChannel.onmessage = (event) => {
-          const text = event.data;
-          
-          if (!otpVerified) {
-            messageBuffer += text;
-            const newlineIdx = messageBuffer.indexOf('\n');
-            if (newlineIdx !== -1) {
-              const line = messageBuffer.slice(0, newlineIdx);
-              messageBuffer = messageBuffer.slice(newlineIdx + 1);
-              
-              try {
-                const msg = JSON.parse(line);
-                if (msg.type === 'otp-result') {
-                  if (msg.success) {
-                    otpVerified = true;
-                    status.className = 'status connected';
-                    status.textContent = 'Connected!';
-                    openTerminal(messageBuffer);
-                    messageBuffer = '';
-                  } else {
-                    throw new Error(msg.message || 'OTP verification failed');
-                  }
-                }
-              } catch (err) {
-                if (err.message.includes('OTP')) {
-                  status.className = 'status error';
-                  status.textContent = 'OTP verification failed';
-                  
-                  // Show error in modal for retry
-                  pendingSession = { sessionId };
-                  document.getElementById('otp-error').textContent = err.message;
-                  document.getElementById('otp-error').style.display = 'block';
-                  document.getElementById('otp-input').value = '';
-                  document.getElementById('otp-submit').disabled = true;
-                  document.getElementById('otp-modal').classList.add('active');
-                  document.getElementById('otp-input').focus();
-                  
-                  cleanup();
-                }
-              }
-            }
-            return;
-          }
-
-          // Terminal data
-          if (term) {
-            term.write(text);
-          }
-        };
-
-        dataChannel.onclose = () => {
-          console.log('Data channel closed');
-          if (term) {
-            term.write('\r\n[Connection closed]\r\n');
-          }
-        };
-
-        // Create and send offer
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        sendSignal({
-          type: 'offer',
-          sessionId,
-          browserId,
-          from: 'browser',
-          sdp: offer.sdp,
+        // Send answer and ICE candidates to server
+        status.textContent = 'Sending answer to runner...';
+        const answerResp = await fetch('/api/session/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            runId: runId,
+            answer: { type: 'answer', sdp: answer.sdp },
+            ice: localIceCandidates,
+          }),
         });
+
+        if (!answerResp.ok) {
+          throw new Error(`Failed to send answer: ${answerResp.status}`);
+        }
+        console.log('Sent answer to runner');
+
+        status.textContent = 'Waiting for connection...';
 
       } catch (err) {
         console.error('Connection failed:', err);
@@ -349,6 +295,76 @@
         status.textContent = 'Connection failed: ' + err.message;
         cleanup();
       }
+    }
+
+    function setupDataChannel(dc, otpCode, runId, status) {
+      dc.onopen = () => {
+        console.log('Data channel opened');
+        status.textContent = 'Verifying OTP...';
+        
+        // Send OTP code for verification
+        dc.send(JSON.stringify({ type: 'otp-response', code: otpCode }));
+      };
+
+      let otpVerified = false;
+      let messageBuffer = '';
+
+      dc.onmessage = (event) => {
+        const text = event.data;
+        
+        if (!otpVerified) {
+          messageBuffer += text;
+          const newlineIdx = messageBuffer.indexOf('\n');
+          if (newlineIdx !== -1) {
+            const line = messageBuffer.slice(0, newlineIdx);
+            messageBuffer = messageBuffer.slice(newlineIdx + 1);
+            
+            try {
+              const msg = JSON.parse(line);
+              if (msg.type === 'otp-result') {
+                if (msg.success) {
+                  otpVerified = true;
+                  status.className = 'status connected';
+                  status.textContent = 'Connected!';
+                  openTerminal(messageBuffer);
+                  messageBuffer = '';
+                } else {
+                  throw new Error(msg.message || 'OTP verification failed');
+                }
+              }
+            } catch (err) {
+              if (err.message.includes('OTP')) {
+                status.className = 'status error';
+                status.textContent = 'OTP verification failed';
+                
+                // Show error in modal for retry
+                pendingSession = { runId };
+                document.getElementById('otp-error').textContent = err.message;
+                document.getElementById('otp-error').style.display = 'block';
+                document.getElementById('otp-input').value = '';
+                document.getElementById('otp-submit').disabled = true;
+                document.getElementById('otp-modal').classList.add('active');
+                document.getElementById('otp-input').focus();
+                
+                cleanup();
+              }
+            }
+          }
+          return;
+        }
+
+        // Terminal data
+        if (term) {
+          term.write(text);
+        }
+      };
+
+      dc.onclose = () => {
+        console.log('Data channel closed');
+        if (term) {
+          term.write('\r\n[Connection closed]\r\n');
+        }
+      };
     }
 
     function openTerminal(initialData) {
