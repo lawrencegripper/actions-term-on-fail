@@ -2,7 +2,6 @@
 <html>
 <head>
   <title>Action Terminal</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
@@ -78,8 +77,10 @@
   </div>
 
   <script type="module">
-    import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm'
-    import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm'
+    import { init, Terminal } from 'https://cdn.jsdelivr.net/npm/ghostty-web@0.4.0/+esm'
+
+    // Initialize ghostty WASM
+    await init();
 
     let term = null;
     let peerConnection = null;
@@ -376,13 +377,9 @@
           background: '#1a1b26',
           foreground: '#a9b1d6',
         },
-        cursorBlink: true,
       });
 
-      const fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
       term.open(document.getElementById('terminal'));
-      fitAddon.fit();
 
       // Handle terminal input
       term.onData(data => {
