@@ -1,7 +1,7 @@
 // src/index.ts
 import * as pty from "node-pty";
 import * as OTPAuth from "otpauth";
-import nodeDataChannel from "node-datachannel";
+import * as nodeDataChannel from "node-datachannel";
 var SERVER_URL = process.env.SERVER_URL || "http://localhost:7373";
 var SHELL = process.env.SHELL || "/bin/bash";
 var OTP_SECRET = process.env.OTP_SECRET || "";
@@ -14,16 +14,6 @@ function createTOTP(secret) {
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret)
   });
-}
-function validateOTP(secret, code) {
-  try {
-    const totp = createTOTP(secret);
-    const delta = totp.validate({ token: code, window: 1 });
-    return delta !== null;
-  } catch (err) {
-    console.error("OTP validation error:", err);
-    return false;
-  }
 }
 async function getOIDCToken() {
   if (process.env.DEV_MODE === "true") {
@@ -55,8 +45,9 @@ async function getOIDCToken() {
   return data.value;
 }
 var EventSource = class {
-  constructor(url) {
+  constructor(url, authHeader) {
     this.url = url;
+    this.authHeader = authHeader;
     this.connect();
   }
   controller = null;
@@ -66,8 +57,12 @@ var EventSource = class {
   async connect() {
     this.controller = new AbortController();
     try {
+      const headers = {
+        "Accept": "text/event-stream",
+        "Authorization": this.authHeader
+      };
       const resp = await fetch(this.url, {
-        headers: { "Accept": "text/event-stream" },
+        headers,
         signal: this.controller.signal
       });
       if (!resp.ok || !resp.body) {
@@ -125,172 +120,95 @@ async function main() {
     console.error("Failed to get OIDC token:", err);
     process.exit(1);
   }
-  const sessionId = Math.random().toString(36).substring(2, 15);
+  const pc = new nodeDataChannel.PeerConnection("runnerClient", {
+    iceServers: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]
+  });
+  const iceCandidates = [];
+  pc.onLocalCandidate((candidate, mid) => {
+    iceCandidates.push({ candidate, mid });
+  });
+  let offer = null;
+  pc.onLocalDescription((sdp, type) => {
+    offer = { sdp, type };
+  });
+  const dc = pc.createDataChannel("terminal");
+  dc.onOpen(() => {
+    console.log("Local data channel opened");
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1e4));
+  if (iceCandidates.length === 0) {
+    console.error("No ICE candidates gathered after 10 seconds");
+    process.exit(1);
+  }
+  if (!offer) {
+    console.error("No local description (offer) generated");
+    process.exit(1);
+  }
+  console.log(`Gathered ICE candidates ${JSON.stringify(iceCandidates)}`);
   try {
+    const body = JSON.stringify({ ice: iceCandidates, description: offer });
+    console.log(body);
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, oidcToken })
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + oidcToken },
+      body
     });
     if (!resp.ok) {
       throw new Error(`Registration failed: ${resp.status} - ${await resp.text()}`);
     }
-    console.log("Registered with server, session:", sessionId);
+    console.log("Registered with server");
   } catch (err) {
     console.error("Failed to register:", err);
     process.exit(1);
   }
-  const connections = /* @__PURE__ */ new Map();
-  async function sendSignal(msg) {
-    try {
-      await fetch(`${SERVER_URL}/api/signal`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(msg)
-      });
-    } catch (err) {
-      console.error("Failed to send signal:", err);
-    }
-  }
+  const shell = pty.spawn(SHELL, [], {
+    name: "xterm-256color",
+    cols: 80,
+    rows: 24,
+    cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+    env: process.env
+  });
+  console.log("PTY started, PID:", shell.pid);
   console.log("Connecting to signaling channel...");
-  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe?sessionId=${sessionId}`);
+  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, oidcToken);
   eventSource.onopen = () => {
-    console.log("Signaling channel connected");
-    console.log("Ready for connections. Press Ctrl+C to exit.");
+    console.log("SRE channel connected");
+    console.log("Waiting for server to signal browser ICE Candidates. Press Ctrl+C to exit.");
     console.log(`Connect at: ${SERVER_URL}`);
   };
   eventSource.onerror = (err) => {
-    console.error("Signaling channel error:", err);
+    console.error("SRE channel error:", err);
   };
   eventSource.onmessage = async (event) => {
     try {
       const msg = JSON.parse(event.data);
-      console.log("Received signal:", msg.type, "from browser:", msg.browserId);
-      if (msg.type === "offer" && msg.sdp) {
-        const pc = new nodeDataChannel.PeerConnection(sessionId, {
-          iceServers: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]
+      console.log("Received signal:", JSON.stringify(msg), event.data);
+      pc.addRemoteCandidate(msg.candidate, msg.mid);
+      pc.onStateChange((state) => {
+        console.log("Connection state:", state);
+      });
+      pc.onDataChannel((dc2) => {
+        console.log("Data channel opened:", dc2.getLabel());
+        dc2.onMessage((data) => {
+          const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+          shell.write(text);
         });
-        const connState = {
-          pc,
-          dc: void 0,
-          pty: void 0,
-          otpVerified: !OTP_SECRET && process.env.DEV_MODE === "true"
-        };
-        connections.set(msg.browserId, connState);
-        pc.onLocalCandidate((candidate, mid) => {
-          console.log("Sending ICE candidate");
-          sendSignal({
-            type: "candidate",
-            sessionId,
-            browserId: msg.browserId,
-            from: "runner",
-            candidate,
-            mid
-          });
-        });
-        pc.onStateChange((state) => {
-          console.log("Connection state:", state);
-          if (state === "closed" || state === "failed") {
-            if (connState.pty) {
-              connState.pty.kill();
-            }
-            connections.delete(msg.browserId);
+        shell.onData((shellData) => {
+          try {
+            dc2.sendMessage(shellData);
+          } catch (e) {
+            console.log(e);
           }
         });
-        pc.onDataChannel((dc) => {
-          console.log("Data channel opened:", dc.getLabel());
-          connState.dc = dc;
-          let otpBuffer = "";
-          dc.onMessage((data) => {
-            const text = typeof data === "string" ? data : new TextDecoder().decode(data);
-            if (!connState.otpVerified) {
-              otpBuffer += text;
-              try {
-                const parsed = JSON.parse(otpBuffer.trim());
-                if (parsed.type === "otp-response" && parsed.code) {
-                  if (validateOTP(OTP_SECRET, parsed.code)) {
-                    connState.otpVerified = true;
-                    console.log("OTP verified successfully");
-                    dc.sendMessage(JSON.stringify({ type: "otp-result", success: true }) + "\n");
-                    const shell = pty.spawn(SHELL, [], {
-                      name: "xterm-256color",
-                      cols: 80,
-                      rows: 24,
-                      cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-                      env: process.env
-                    });
-                    connState.pty = shell;
-                    console.log("PTY started, PID:", shell.pid);
-                    shell.onData((shellData) => {
-                      try {
-                        dc.sendMessage(shellData);
-                      } catch {
-                      }
-                    });
-                    shell.onExit(() => {
-                      console.log("Shell exited");
-                      pc.close();
-                      connections.delete(msg.browserId);
-                    });
-                  } else {
-                    console.log("OTP verification failed");
-                    dc.sendMessage(JSON.stringify({ type: "otp-result", success: false, message: "Invalid OTP code" }) + "\n");
-                    setTimeout(() => pc.close(), 1e3);
-                  }
-                  otpBuffer = "";
-                }
-              } catch {
-                if (otpBuffer.length > 1024) {
-                  otpBuffer = "";
-                  dc.sendMessage(JSON.stringify({ type: "otp-result", success: false, message: "Invalid request" }) + "\n");
-                }
-              }
-              return;
-            }
-            if (connState.pty) {
-              connState.pty.write(text);
-            }
-          });
-          dc.onClosed(() => {
-            console.log("Data channel closed");
-            if (connState.pty) {
-              connState.pty.kill();
-            }
-            connections.delete(msg.browserId);
-          });
+        dc2.onClosed(() => {
+          console.log("Data channel closed");
+          shell.kill();
         });
-        pc.setRemoteDescription(msg.sdp, "offer");
-        pc.onLocalDescription((sdp, type) => {
-          console.log("Sending SDP answer");
-          sendSignal({
-            type: "answer",
-            sessionId,
-            browserId: msg.browserId,
-            from: "runner",
-            sdp
-          });
-        });
-      } else if (msg.type === "candidate" && msg.candidate) {
-        const conn = connections.get(msg.browserId);
-        if (conn) {
-          console.log("Adding ICE candidate");
-          conn.pc.addRemoteCandidate(msg.candidate, msg.mid || "0");
-        }
-      }
+      });
     } catch (err) {
       console.error("Error handling signal:", err);
     }
   };
-  setInterval(async () => {
-    try {
-      await fetch(`${SERVER_URL}/api/sessions/heartbeat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId })
-      });
-    } catch {
-    }
-  }, 6e4);
   await new Promise(() => {
   });
 }

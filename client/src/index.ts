@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
 import * as OTPAuth from 'otpauth';
-import nodeDataChannel from 'node-datachannel';
+import * as nodeDataChannel from 'node-datachannel';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:7373';
 const SHELL = process.env.SHELL || '/bin/bash';
@@ -68,13 +68,9 @@ async function getOIDCToken(): Promise<string> {
 }
 
 interface SignalMessage {
-  type: 'offer' | 'answer' | 'candidate';
-  sessionId: string;
-  browserId: string;
-  from?: 'browser' | 'runner';
-  sdp?: string;
-  candidate?: string;
-  mid?: string;
+  answer: string;
+  candidate: string;
+  mid: string;
 }
 
 // Polyfill EventSource for Node.js
@@ -84,15 +80,19 @@ class EventSource {
   public onerror: ((err: any) => void) | null = null;
   public onmessage: ((event: { data: string }) => void) | null = null;
 
-  constructor(private url: string) {
+  constructor(private url: string, private authHeader: string) {
     this.connect();
   }
 
   private async connect() {
     this.controller = new AbortController();
     try {
+      const headers: Record<string, string> = {
+        'Accept': 'text/event-stream',
+        'Authorization': this.authHeader,
+      };
       const resp = await fetch(this.url, {
-        headers: { 'Accept': 'text/event-stream' },
+        headers: headers,
         signal: this.controller.signal,
       });
 
@@ -164,214 +164,126 @@ async function main() {
     process.exit(1);
   }
 
-  // Generate a unique session ID
-  const sessionId = Math.random().toString(36).substring(2, 15);
-  
+  const pc = new nodeDataChannel.PeerConnection("runnerClient", {
+    iceServers: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
+  });
+
+  const iceCandidates: any = [];
+
+  pc.onLocalCandidate((candidate: string, mid: string) => {
+    iceCandidates.push({ candidate, mid });
+  });
+
+  let offer: { sdp: string; type: string } | null = null;
+  pc.onLocalDescription((sdp, type) => {
+    offer = { sdp, type }
+  })
+
+  // Create a data channel to trigger offer generation
+  const dc = pc.createDataChannel("terminal");
+  dc.onOpen(() => {
+    console.log('Local data channel opened');
+  });
+
+  // Wait for ICE candidates to be gathered
+  await new Promise(resolve => setTimeout(resolve, 10000));
+
+  if (iceCandidates.length === 0) {
+    console.error('No ICE candidates gathered after 10 seconds');
+    process.exit(1);
+  }
+
+  if (!offer) {
+    console.error('No local description (offer) generated');
+    process.exit(1);
+  }
+
+  console.log(`Gathered ICE candidates ${JSON.stringify(iceCandidates)}`);
+
   // Register with server
   try {
+    const body = JSON.stringify({ ice: iceCandidates, offer: offer })
+    console.log(body)
     const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, oidcToken }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + oidcToken },
+      body: body,
     });
     if (!resp.ok) {
       throw new Error(`Registration failed: ${resp.status} - ${await resp.text()}`);
     }
-    console.log('Registered with server, session:', sessionId);
+    console.log('Registered with server');
   } catch (err) {
     console.error('Failed to register:', err);
     process.exit(1);
   }
 
-  // Map to track active connections by browserId
-  const connections = new Map<string, {
-    pc: nodeDataChannel.PeerConnection;
-    dc?: nodeDataChannel.DataChannel;
-    pty?: pty.IPty;
-    otpVerified: boolean;
-  }>();
+  const shell = pty.spawn(SHELL, [], {
+    name: 'xterm-256color',
+    cols: 80,
+    rows: 24,
+    cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+    env: process.env as Record<string, string>,
+  });
 
-  // Send signaling message to server
-  async function sendSignal(msg: SignalMessage) {
-    try {
-      await fetch(`${SERVER_URL}/api/signal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(msg),
-      });
-    } catch (err) {
-      console.error('Failed to send signal:', err);
-    }
-  }
+  console.log('PTY started, PID:', shell.pid);
 
   // Handle incoming signaling messages via SSE
   console.log('Connecting to signaling channel...');
-  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe?sessionId=${sessionId}`);
-  
+  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, oidcToken);
+
   eventSource.onopen = () => {
-    console.log('Signaling channel connected');
-    console.log('Ready for connections. Press Ctrl+C to exit.');
+    console.log('SRE channel connected');
+    console.log('Waiting for server to signal browser ICE Candidates. Press Ctrl+C to exit.');
     console.log(`Connect at: ${SERVER_URL}`);
   };
 
   eventSource.onerror = (err) => {
-    console.error('Signaling channel error:', err);
+    console.error('SRE channel error:', err);
   };
 
   eventSource.onmessage = async (event) => {
     try {
       const msg: SignalMessage = JSON.parse(event.data);
-      console.log('Received signal:', msg.type, 'from browser:', msg.browserId);
+      console.log('Received signal:', JSON.stringify(msg), event.data);
 
-      if (msg.type === 'offer' && msg.sdp) {
-        // New connection request from browser
-        const pc = new nodeDataChannel.PeerConnection(sessionId, {
-          iceServers: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
+      pc.addRemoteCandidate(msg.candidate, msg.mid)
+
+      pc.onStateChange((state) => {
+        console.log('Connection state:', state);
+      });
+
+      pc.onDataChannel((dc) => {
+        console.log('Data channel opened:', dc.getLabel());
+
+        dc.onMessage((data) => {
+          const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
+
+          // Terminal data - write to PTY
+          shell.write(text);
         });
 
-        const connState = {
-          pc,
-          dc: undefined as nodeDataChannel.DataChannel | undefined,
-          pty: undefined as pty.IPty | undefined,
-          otpVerified: !OTP_SECRET && process.env.DEV_MODE === 'true',
-        };
-        connections.set(msg.browserId, connState);
-
-        pc.onLocalCandidate((candidate, mid) => {
-          console.log('Sending ICE candidate');
-          sendSignal({
-            type: 'candidate',
-            sessionId,
-            browserId: msg.browserId,
-            from: 'runner',
-            candidate,
-            mid,
-          });
-        });
-
-        pc.onStateChange((state) => {
-          console.log('Connection state:', state);
-          if (state === 'closed' || state === 'failed') {
-            if (connState.pty) {
-              connState.pty.kill();
-            }
-            connections.delete(msg.browserId);
+        shell.onData((shellData) => {
+          try {
+            dc.sendMessage(shellData);
+          } catch (e) {
+            console.log(e)
           }
         });
 
-        pc.onDataChannel((dc) => {
-          console.log('Data channel opened:', dc.getLabel());
-          connState.dc = dc;
-
-          let otpBuffer = '';
-
-          dc.onMessage((data) => {
-            const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
-
-            // OTP verification phase
-            if (!connState.otpVerified) {
-              otpBuffer += text;
-              try {
-                const parsed = JSON.parse(otpBuffer.trim());
-                if (parsed.type === 'otp-response' && parsed.code) {
-                  if (validateOTP(OTP_SECRET, parsed.code)) {
-                    connState.otpVerified = true;
-                    console.log('OTP verified successfully');
-                    dc.sendMessage(JSON.stringify({ type: 'otp-result', success: true }) + '\n');
-                    
-                    // Start PTY
-                    const shell = pty.spawn(SHELL, [], {
-                      name: 'xterm-256color',
-                      cols: 80,
-                      rows: 24,
-                      cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-                      env: process.env as Record<string, string>,
-                    });
-                    connState.pty = shell;
-                    console.log('PTY started, PID:', shell.pid);
-
-                    shell.onData((shellData) => {
-                      try {
-                        dc.sendMessage(shellData);
-                      } catch {}
-                    });
-
-                    shell.onExit(() => {
-                      console.log('Shell exited');
-                      pc.close();
-                      connections.delete(msg.browserId);
-                    });
-                  } else {
-                    console.log('OTP verification failed');
-                    dc.sendMessage(JSON.stringify({ type: 'otp-result', success: false, message: 'Invalid OTP code' }) + '\n');
-                    setTimeout(() => pc.close(), 1000);
-                  }
-                  otpBuffer = '';
-                }
-              } catch {
-                // Incomplete JSON, wait for more data
-                if (otpBuffer.length > 1024) {
-                  otpBuffer = '';
-                  dc.sendMessage(JSON.stringify({ type: 'otp-result', success: false, message: 'Invalid request' }) + '\n');
-                }
-              }
-              return;
-            }
-
-            // Terminal data - write to PTY
-            if (connState.pty) {
-              connState.pty.write(text);
-            }
-          });
-
-          dc.onClosed(() => {
-            console.log('Data channel closed');
-            if (connState.pty) {
-              connState.pty.kill();
-            }
-            connections.delete(msg.browserId);
-          });
+        dc.onClosed(() => {
+          console.log('Data channel closed');
+          shell.kill();
         });
+      });
 
-        // Set remote description (offer) and generate answer
-        pc.setRemoteDescription(msg.sdp, 'offer');
-        
-        pc.onLocalDescription((sdp, type) => {
-          console.log('Sending SDP answer');
-          sendSignal({
-            type: 'answer',
-            sessionId,
-            browserId: msg.browserId,
-            from: 'runner',
-            sdp,
-          });
-        });
-
-      } else if (msg.type === 'candidate' && msg.candidate) {
-        const conn = connections.get(msg.browserId);
-        if (conn) {
-          console.log('Adding ICE candidate');
-          conn.pc.addRemoteCandidate(msg.candidate, msg.mid || '0');
-        }
-      }
     } catch (err) {
       console.error('Error handling signal:', err);
     }
   };
 
-  // Heartbeat
-  setInterval(async () => {
-    try {
-      await fetch(`${SERVER_URL}/api/sessions/heartbeat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
-    } catch {}
-  }, 60000);
-
   // Keep alive
-  await new Promise(() => {});
+  await new Promise(() => { });
 }
 
 main().catch(err => {

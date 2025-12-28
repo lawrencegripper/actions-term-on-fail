@@ -28,7 +28,7 @@ run-client:
 
 # Run in dev mode - starts server in background, then client
 # Access http://localhost:7373/auth/github to login first
-run-devmode:
+run-devmode: build
 	@echo "Starting server in dev mode..."
 	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
 	@cd server && DEV_MODE=true DEV_USER=$(USER) go run . &

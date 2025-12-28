@@ -25,40 +25,29 @@ const githubJWKSURL = "https://token.actions.githubusercontent.com/.well-known/j
 
 // Session represents a registered action runner
 type Session struct {
-	SessionID string    `json:"sessionId"`
-	Actor     string    `json:"actor"`
-	Repo      string    `json:"repo,omitempty"`
-	RunID     string    `json:"runId,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-// SignalMessage represents a WebRTC signaling message
-type SignalMessage struct {
-	Type      string `json:"type"`      // offer, answer, candidate
-	SessionID string `json:"sessionId"` // runner session ID
-	BrowserID string `json:"browserId"` // browser connection ID
-	From      string `json:"from,omitempty"` // "browser" or "runner"
-	SDP       string `json:"sdp,omitempty"`
-	Candidate string `json:"candidate,omitempty"`
-	Mid       string `json:"mid,omitempty"`
+	Actor     string          `json:"actor"`
+	Repo      string          `json:"repo,omitempty"`
+	RunID     string          `json:"runId,omitempty"`
+	CreatedAt time.Time       `json:"createdAt"`
+	ICE       json.RawMessage `json:"ice,omitempty"`
+	Offer     json.RawMessage `json:"offer,omitempty"`
 }
 
 // SSE client for signaling
 type SSEClient struct {
-	SessionID string
-	Messages  chan []byte
-	Done      chan struct{}
+	Messages chan []byte
+	Done     chan struct{}
 }
 
 var (
-	sessions       = make(map[string]*Session) // sessionId -> session
-	sessionsMu     sync.RWMutex
-	sseClients     = make(map[string]*SSEClient) // sessionId -> SSE client (runner)
-	browserClients = make(map[string]*SSEClient) // browserId -> SSE client (browser)
-	sseClientsMu   sync.RWMutex
-	jwtSecret      []byte
-	oauthConfig    *oauth2.Config
-	jwkCache       *jwk.Cache
+	actorToSessions = make(map[string]*Session) // actor -> session
+	runIdToSessions = make(map[string]*Session) // runId -> session
+	sessionsMu      sync.RWMutex
+	sseClients      = make(map[string]*SSEClient) // actor -> SSE client (runner)
+	sseClientsMu    sync.RWMutex
+	jwtSecret       []byte
+	oauthConfig     *oauth2.Config
+	jwkCache        *jwk.Cache
 )
 
 func init() {
@@ -92,9 +81,8 @@ func main() {
 
 	// API endpoints
 	http.HandleFunc("/api/sessions", handleSessions)
+	http.HandleFunc("/api/session/connect", handleSessionConnect)
 	http.HandleFunc("/api/sessions/register", handleRegister)
-	http.HandleFunc("/api/sessions/heartbeat", handleHeartbeat)
-	http.HandleFunc("/api/signal", handleSignal)
 	http.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
 	http.HandleFunc("/auth/github", handleGitHubAuth)
 	http.HandleFunc("/auth/github/callback", handleGitHubCallback)
@@ -115,22 +103,24 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get OIDC token from Authorization header
+	oidcToken := extractBearerToken(r)
+	if oidcToken == "" {
+		http.Error(w, "Authorization header with Bearer token required", http.StatusUnauthorized)
+		return
+	}
+
 	var req struct {
-		SessionID string `json:"sessionId"`
-		OIDCToken string `json:"oidcToken"`
+		ICE   json.RawMessage `json:"ice"`
+		Offer json.RawMessage `json:"offer"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if req.SessionID == "" {
-		http.Error(w, "sessionId required", http.StatusBadRequest)
-		return
-	}
-
 	// Validate OIDC token and extract claims
-	actor, repo, runID, err := validateGitHubOIDCToken(r.Context(), req.OIDCToken)
+	actor, repo, runID, err := validateGitHubOIDCToken(r.Context(), oidcToken)
 	if err != nil {
 		log.Printf("OIDC validation failed: %v", err)
 		http.Error(w, "invalid OIDC token: "+err.Error(), http.StatusUnauthorized)
@@ -138,20 +128,31 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess := &Session{
-		SessionID: req.SessionID,
 		Actor:     actor,
 		Repo:      repo,
 		RunID:     runID,
 		CreatedAt: time.Now(),
+		ICE:       req.ICE,
+		Offer:     req.Offer,
 	}
 
 	sessionsMu.Lock()
-	sessions[sess.SessionID] = sess
+	actorToSessions[sess.Actor] = sess
+	runIdToSessions[sess.RunID] = sess
 	sessionsMu.Unlock()
 
-	log.Printf("Registered session: %s for actor %s (repo: %s, run: %s)", sess.SessionID, actor, repo, runID)
+	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// extractBearerToken extracts the token from Authorization: Bearer <token> header
+func extractBearerToken(r *http.Request) string {
+	auth := r.Header.Get("Authorization")
+	if len(auth) > 7 && auth[:7] == "Bearer " {
+		return auth[7:]
+	}
+	return ""
 }
 
 // validateGitHubOIDCToken validates a GitHub Actions OIDC token and returns claims
@@ -241,95 +242,24 @@ func indexOf(s, sep string) int {
 	return -1
 }
 
-// handleHeartbeat - Keep session alive
-func handleHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		SessionID string `json:"sessionId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	sessionsMu.Lock()
-	if sess, ok := sessions[req.SessionID]; ok {
-		sess.CreatedAt = time.Now() // Refresh
-	}
-	sessionsMu.Unlock()
-
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleSignal - Relay WebRTC signaling messages between browser and runner
-func handleSignal(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var msg SignalMessage
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Signal: %s from session=%s browser=%s", msg.Type, msg.SessionID, msg.BrowserID)
-
-	data, _ := json.Marshal(msg)
-
-	sseClientsMu.RLock()
-	defer sseClientsMu.RUnlock()
-
-	// Route message to appropriate client
-	// Determine direction by checking if a runner is subscribed for this session
-	// and if this message should go TO the runner (offer) or FROM the runner (answer)
-	
-	sseClientsMu.RLock()
-	runnerClient, runnerOk := sseClients[msg.SessionID]
-	browserClient, browserOk := browserClients[msg.BrowserID]
-	sseClientsMu.RUnlock()
-
-	if msg.Type == "offer" || msg.From == "browser" {
-		// Send to runner
-		if runnerOk {
-			select {
-			case runnerClient.Messages <- data:
-			default:
-				log.Printf("Runner message queue full for session %s", msg.SessionID)
-			}
-		} else {
-			log.Printf("No runner connected for session %s", msg.SessionID)
-			http.Error(w, "runner not connected", http.StatusNotFound)
-			return
-		}
-	} else if msg.Type == "answer" || msg.From == "runner" {
-		// Send to browser
-		if browserOk {
-			select {
-			case browserClient.Messages <- data:
-			default:
-				log.Printf("Browser message queue full for %s", msg.BrowserID)
-			}
-		} else {
-			log.Printf("No browser connected for %s", msg.BrowserID)
-		}
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
 // handleSignalSubscribe - SSE endpoint for receiving signaling messages
 func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Query().Get("sessionId")
-	browserID := r.URL.Query().Get("browserId")
+	// Get OIDC token from Authorization header (for runner clients)
+	oidcToken := extractBearerToken(r)
 
-	if sessionID == "" && browserID == "" {
-		http.Error(w, "sessionId or browserId required", http.StatusBadRequest)
+	var actor string
+
+	if oidcToken != "" {
+		// Runner client - validate OIDC token
+		var err error
+		actor, _, _, err = validateGitHubOIDCToken(r.Context(), oidcToken)
+		if err != nil {
+			log.Printf("SSE OIDC validation failed: %v", err)
+			http.Error(w, "invalid OIDC token: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+	} else {
+		http.Error(w, "Authorization header required", http.StatusBadRequest)
 		return
 	}
 
@@ -346,34 +276,23 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &SSEClient{
-		SessionID: sessionID,
-		Messages:  make(chan []byte, 100),
-		Done:      make(chan struct{}),
+		Messages: make(chan []byte, 100),
+		Done:     make(chan struct{}),
 	}
 
 	// Register client
 	sseClientsMu.Lock()
-	if sessionID != "" {
-		// Runner client
-		sseClients[sessionID] = client
-		log.Printf("Runner connected for session %s", sessionID)
-	} else {
-		// Browser client
-		browserClients[browserID] = client
-		log.Printf("Browser connected: %s", browserID)
-	}
+	// Runner client - keyed by actor
+	sseClients[actor] = client
+	log.Printf("Runner connected for actor %s", actor)
 	sseClientsMu.Unlock()
 
 	// Cleanup on disconnect
 	defer func() {
 		sseClientsMu.Lock()
-		if sessionID != "" {
-			delete(sseClients, sessionID)
-			log.Printf("Runner disconnected for session %s", sessionID)
-		} else {
-			delete(browserClients, browserID)
-			log.Printf("Browser disconnected: %s", browserID)
-		}
+		delete(sseClients, actor)
+		log.Printf("Runner disconnected for actor %s", actor)
+
 		sseClientsMu.Unlock()
 		close(client.Done)
 	}()
@@ -396,35 +315,44 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSessions - Get sessions for authenticated user
-func handleSessions(w http.ResponseWriter, r *http.Request) {
+func handleSessionConnect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Get user from JWT cookie
-	cookie, err := r.Cookie("token")
+	username, err := usernameFromCookieOrError(r)
+
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	claims := &jwt.MapClaims{}
-	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	})
-	if err != nil || !token.Valid {
-		http.Error(w, "invalid token", http.StatusUnauthorized)
+	runID := r.URL.Query().Get("runid")
+	if runID == "" {
+		http.Error(w, "missing runid parameter", http.StatusBadRequest)
 		return
 	}
 
-	username := (*claims)["username"].(string)
+	sess := runIdToSessions[username]
+
+}
+
+// handleSessions - Get sessions for authenticated user
+func handleSessions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get user from JWT cookie
+	username, err := usernameFromCookieOrError(r, w)
+	if err != nil {
+		return
+	}
 
 	// Clean old sessions and filter by user
 	sessionsMu.Lock()
 	now := time.Now()
 	var userSessions []*Session
-	for id, sess := range sessions {
+	for id, sess := range actorToSessions {
 		if now.Sub(sess.CreatedAt) > 30*time.Minute {
-			delete(sessions, id)
+			delete(actorToSessions, id)
 			continue
 		}
 		if sess.Actor == username {
@@ -437,13 +365,31 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sseClientsMu.RLock()
 	var activeSessions []*Session
 	for _, sess := range userSessions {
-		if _, ok := sseClients[sess.SessionID]; ok {
+		if _, ok := sseClients[sess.Actor]; ok {
 			activeSessions = append(activeSessions, sess)
 		}
 	}
 	sseClientsMu.RUnlock()
 
 	json.NewEncoder(w).Encode(activeSessions)
+}
+
+func usernameFromCookieOrError(r *http.Request) (string, error) {
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		return "", fmt.Errorf("unauthorized missing cookie: %w", err)
+	}
+
+	claims := &jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return "", fmt.Errorf("invalid token: %w", err)
+	}
+
+	username := (*claims)["username"].(string)
+	return username, nil
 }
 
 // handleGitHubAuth - Redirect to GitHub OAuth
