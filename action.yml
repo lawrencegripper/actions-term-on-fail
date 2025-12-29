@@ -16,8 +16,8 @@ inputs:
 
 runs:
   using: "node20"
-  main: "dist/main.js"
-  post: "dist/post.js"
+  main: "client/dist/main.js"
+  post: "client/dist/post.js"
   post-if: failure()
 
 branding:

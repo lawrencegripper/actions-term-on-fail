@@ -1,9 +1,9 @@
 // Main entry - validates inputs and saves state for post hook
-const core = require('@actions/core');
-const OTPAuth = require('otpauth');
+import * as core from '@actions/core';
+import * as OTPAuth from 'otpauth';
 
-// Validate OTP secret by attempting to create a TOTP instance (same as client/src/index.ts)
-function validateOTPSecret(secret) {
+// Validate OTP secret by attempting to create a TOTP instance (same as index.ts)
+function validateOTPSecret(secret: string): { valid: boolean; error?: string } {
   try {
     new OTPAuth.TOTP({
       issuer: 'ActionTerminal',
@@ -15,7 +15,7 @@ function validateOTPSecret(secret) {
     });
     return { valid: true };
   } catch (err) {
-    return { valid: false, error: err.message };
+    return { valid: false, error: (err as Error).message };
   }
 }
 
@@ -48,5 +48,5 @@ try {
   console.log('Terminal on Fail action registered. Will start terminal in post-job hook if workflow fails.');
   console.log('OTP secret validated - browser will need to provide valid OTP code to access terminal.');
 } catch (error) {
-  core.setFailed(error.message);
+  core.setFailed((error as Error).message);
 }

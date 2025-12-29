@@ -1,0 +1,41 @@
+name: Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-action-on-failure:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build client
+        working-directory: ./client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Use terminal-on-fail action
+        uses: ./
+        with:
+          otp-secret: ${{ secrets.OTP_SECRET }}
+          timeout: "120"
+
+      - name: Intentional failure to trigger action
+        run: |
+          echo "This step will fail to trigger the terminal-on-fail action"
+          exit 1

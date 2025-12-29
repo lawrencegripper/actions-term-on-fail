@@ -254,14 +254,12 @@ async function main() {
   eventSource.onmessage = async (event) => {
     try {
       const msg = JSON.parse(event.data);
-      console.log("Received signal:", msg.type, event.data);
       if (msg.type === "answer" && msg.answer) {
         console.log("Setting remote description (answer)");
         pc.setRemoteDescription(msg.answer.sdp, msg.answer.type);
         remoteDescriptionSet = true;
       } else if (msg.type === "candidate" && msg.candidate && msg.mid) {
         if (remoteDescriptionSet) {
-          console.log("Adding remote ICE candidate:", msg.candidate);
           pc.addRemoteCandidate(msg.candidate, msg.mid);
         } else {
           console.log("Queuing ICE candidate (remote description not set yet)");

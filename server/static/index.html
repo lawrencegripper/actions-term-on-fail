@@ -1,21 +1,68 @@
 <!DOCTYPE html>
 <html data-color-mode="dark" data-dark-theme="dark">
+
 <head>
   <title>Action Terminal</title>
   <link rel="stylesheet" href="https://unpkg.com/@primer/css@22.0.2/dist/primer.css">
   <style>
-    #terminal-container { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0d1117; z-index: 200; }
-    #terminal { width: 100%; height: 100%; }
-    #app { display: none; }
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; }
-    .modal-overlay.active { display: flex; }
-    .otp-input { letter-spacing: 8px; text-align: center; font-size: 24px !important; font-family: ui-monospace, monospace; }
-    .session-card { cursor: pointer; transition: border-color 0.2s; }
-    .session-card:hover { border-color: var(--borderColor-accent-emphasis) !important; }
+    #terminal-container {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #0d1117;
+      z-index: 200;
+    }
+
+    #terminal {
+      width: 100%;
+      height: 100%;
+    }
+
+    #app {
+      display: none;
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .otp-input {
+      letter-spacing: 8px;
+      text-align: center;
+      font-size: 24px !important;
+      font-family: ui-monospace, monospace;
+    }
+
+    .session-card {
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .session-card:hover {
+      border-color: var(--borderColor-accent-emphasis) !important;
+    }
   </style>
 </head>
+
 <body class="color-bg-default">
-  <div id="login-view" class="flex-column flex-items-center flex-justify-center" style="min-height: 100vh; display: none;">
+  <div id="login-view" class="flex-column flex-items-center flex-justify-center"
+    style="min-height: 100vh; display: none;">
     <div class="Box color-shadow-large p-5" style="max-width: 400px; width: 90%;">
       <div class="text-center mb-4">
         <span style="font-size: 48px;">🖥️</span>
@@ -23,7 +70,11 @@
         <p class="color-fg-muted mt-2">Access your GitHub Actions runners directly in the browser.</p>
       </div>
       <a href="/auth/github" class="btn btn-primary btn-block btn-large">
-        <svg class="octicon mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        <svg class="octicon mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+          <path fill="currentColor"
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+          </path>
+        </svg>
         Sign in with GitHub
       </a>
     </div>
@@ -56,19 +107,22 @@
       <div class="Box-body p-4">
         <p class="color-fg-muted f5 mb-4">Enter the 6-digit code from your authenticator app to access the terminal.</p>
         <div id="otp-error" class="flash flash-error mb-4" style="display: none;"></div>
-        <input type="text" id="otp-input" class="form-control form-control-large input-block otp-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+        <input type="text" id="otp-input" class="form-control form-control-large input-block otp-input" maxlength="6"
+          pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
       </div>
       <div class="Box-footer p-3">
         <div class="d-flex flex-justify-end gap-2">
           <button class="btn" type="button" onclick="window.cancelOTP()">Cancel</button>
-          <button class="btn btn-primary" type="button" id="otp-submit" onclick="window.submitOTP()" disabled>Connect</button>
+          <button class="btn btn-primary" type="button" id="otp-submit" onclick="window.submitOTP()"
+            disabled>Connect</button>
         </div>
       </div>
     </div>
   </div>
 
   <div id="terminal-container">
-    <button class="btn btn-sm position-fixed" style="z-index: 300; top: 8px; right: 8px; background: rgba(0,0,0,0.6);" onclick="closeTerminal()">✕ Close</button>
+    <button class="btn btn-sm position-fixed" style="z-index: 300; top: 8px; right: 8px; background: rgba(0,0,0,0.6);"
+      onclick="closeTerminal()">✕ Close</button>
     <div id="terminal"></div>
   </div>
 
@@ -102,7 +156,7 @@
           loadSessions();
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
       document.getElementById('login-view').style.display = 'flex';
       return false;
     }
@@ -111,7 +165,7 @@
       const resp = await fetch('/api/sessions');
       const sessions = await resp.json();
       const list = document.getElementById('sessions-list');
-      
+
       if (!sessions || sessions.length === 0) {
         list.innerHTML = `
           <div class="blankslate color-bg-subtle rounded-2 p-5">
@@ -146,9 +200,9 @@
     }
 
     // Show OTP modal and wait for code
-    window.promptOTPAndConnect = function(runId) {
+    window.promptOTPAndConnect = function (runId) {
       pendingSession = { runId };
-      
+
       // Reset modal state
       document.getElementById('otp-input').value = '';
       document.getElementById('otp-error').style.display = 'none';
@@ -170,17 +224,17 @@
       }
     });
 
-    window.cancelOTP = function() {
+    window.cancelOTP = function () {
       document.getElementById('otp-modal').classList.remove('active');
       pendingSession = null;
     };
 
-    window.submitOTP = async function() {
+    window.submitOTP = async function () {
       const otpCode = document.getElementById('otp-input').value;
       if (otpCode.length !== 6 || !pendingSession) return;
 
       document.getElementById('otp-modal').classList.remove('active');
-      
+
       // Connect with OTP
       await connectToSession(pendingSession.runId, otpCode);
       pendingSession = null;
@@ -297,7 +351,7 @@
       dc.onopen = () => {
         console.log('Data channel opened');
         status.textContent = 'Verifying OTP...';
-        
+
         // Send OTP code for verification
         dc.send(JSON.stringify({ type: 'otp-response', code: otpCode }));
       };
@@ -307,14 +361,14 @@
 
       dc.onmessage = (event) => {
         const text = event.data;
-        
+
         if (!otpVerified) {
           messageBuffer += text;
           const newlineIdx = messageBuffer.indexOf('\n');
           if (newlineIdx !== -1) {
             const line = messageBuffer.slice(0, newlineIdx);
             messageBuffer = messageBuffer.slice(newlineIdx + 1);
-            
+
             try {
               const msg = JSON.parse(line);
               if (msg.type === 'otp-result') {
@@ -332,7 +386,7 @@
               if (err.message.includes('OTP')) {
                 status.className = 'flash flash-error mb-4';
                 status.textContent = 'OTP verification failed';
-                
+
                 // Show error in modal for retry
                 pendingSession = { runId };
                 document.getElementById('otp-error').textContent = err.message;
@@ -341,7 +395,7 @@
                 document.getElementById('otp-submit').disabled = true;
                 document.getElementById('otp-modal').classList.add('active');
                 document.getElementById('otp-input').focus();
-                
+
                 cleanup();
               }
             }
@@ -365,7 +419,7 @@
 
     function openTerminal(initialData) {
       document.getElementById('terminal-container').style.display = 'block';
-      
+
       term = new Terminal({
         fontSize: 14,
         theme: {
@@ -406,7 +460,7 @@
       }
     }
 
-    window.closeTerminal = function() {
+    window.closeTerminal = function () {
       document.getElementById('terminal-container').style.display = 'none';
       cleanup();
       if (term) {
@@ -426,4 +480,5 @@
     checkAuth();
   </script>
 </body>
+
 </html>
