@@ -9,7 +9,7 @@ build: build-server build-client
 # Build Go server
 build-server:
 	cd server && go build -o server .
-`
+
 # Build TypeScript client and GitHub Action entry points
 build-client:
 	cd client && npm install && npm run build

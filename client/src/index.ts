@@ -269,8 +269,10 @@ async function main() {
         if (msg.type === 'otp-response' && msg.code) {
           console.log('Received OTP code, validating...');
           
+          // In dev mode, accept "000000" as a valid code for testing
+          const isDevBypass = process.env.DEV_MODE === 'true' && msg.code === '000000';
           // In dev mode without OTP_SECRET, accept any code
-          const isValid = !OTP_SECRET || validateOTP(OTP_SECRET, msg.code);
+          const isValid = isDevBypass || !OTP_SECRET || validateOTP(OTP_SECRET, msg.code);
           
           if (isValid) {
             console.log('OTP verified successfully');

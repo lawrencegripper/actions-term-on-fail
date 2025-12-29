@@ -5,24 +5,79 @@
   <title>Action Terminal</title>
   <link rel="stylesheet" href="https://unpkg.com/@primer/css@22.0.2/dist/primer.css">
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+    }
+
     #terminal-container {
-      display: none;
       position: fixed;
-      top: 0;
       left: 0;
       right: 0;
       bottom: 0;
-      background: #0d1117;
+      height: 0;
+      background: #161b22;
       z-index: 200;
+      transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-top: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #terminal-container.open {
+      height: 66.67vh;
+    }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: #21262d;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .terminal-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .terminal-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    }
+
+    .terminal-status {
+      font-size: 12px;
+      color: #8b949e;
     }
 
     #terminal {
+      flex: 1;
       width: 100%;
-      height: 100%;
+      overflow: hidden;
     }
 
     #app {
       display: none;
+      height: 100vh;
+      overflow-y: auto;
+      transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #app.terminal-open {
+      height: 33.33vh;
+      overflow-y: auto;
     }
 
     .modal-overlay {
@@ -32,10 +87,11 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 100;
+      background: rgba(1, 4, 9, 0.8);
+      z-index: 500;
       align-items: center;
       justify-content: center;
+      backdrop-filter: blur(4px);
     }
 
     .modal-overlay.active {
@@ -46,16 +102,181 @@
       letter-spacing: 8px;
       text-align: center;
       font-size: 24px !important;
-      font-family: ui-monospace, monospace;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     }
 
-    .session-card {
+    .session-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #21262d;
       cursor: pointer;
-      transition: border-color 0.2s;
+      transition: background-color 0.15s ease;
     }
 
-    .session-card:hover {
-      border-color: var(--borderColor-accent-emphasis) !important;
+    .session-item:hover {
+      background-color: #161b22;
+    }
+
+    .session-item:last-child {
+      border-bottom: none;
+    }
+
+    .session-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
+    .session-icon svg {
+      color: white;
+    }
+
+    .session-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #c9d1d9;
+      margin-bottom: 2px;
+    }
+
+    .session-meta {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .session-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0 8px;
+      height: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 10px;
+      background: rgba(35, 134, 54, 0.2);
+      color: #3fb950;
+      margin-left: 12px;
+    }
+
+    .session-arrow {
+      color: #8b949e;
+      margin-left: 8px;
+    }
+
+    .header-bar {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      border-bottom: 1px solid #21262d;
+      background: #0d1117;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #c9d1d9;
+    }
+
+    .section-header {
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #010409;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 16px;
+      text-align: center;
+    }
+
+    .empty-state-icon {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      color: #484f58;
+    }
+
+    .empty-state-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #c9d1d9;
+      margin-bottom: 4px;
+    }
+
+    .empty-state-text {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .status-banner {
+      padding: 12px 16px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .status-banner.connecting {
+      background: rgba(187, 128, 9, 0.15);
+      color: #d29922;
+    }
+
+    .status-banner.connected {
+      background: rgba(35, 134, 54, 0.15);
+      color: #3fb950;
+    }
+
+    .status-banner.error {
+      background: rgba(248, 81, 73, 0.15);
+      color: #f85149;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .close-btn:hover {
+      background: #30363d;
+      color: #c9d1d9;
+      border-color: #8b949e;
     }
   </style>
 </head>
@@ -63,13 +284,17 @@
 <body class="color-bg-default">
   <div id="login-view" class="flex-column flex-items-center flex-justify-center"
     style="min-height: 100vh; display: none;">
-    <div class="Box color-shadow-large p-5" style="max-width: 400px; width: 90%;">
+    <div class="Box color-shadow-large p-5" style="max-width: 360px; width: 90%; border-radius: 12px;">
       <div class="text-center mb-4">
-        <span style="font-size: 48px;">🖥️</span>
-        <h1 class="h2 mt-2">Action Terminal</h1>
-        <p class="color-fg-muted mt-2">Access your GitHub Actions runners directly in the browser.</p>
+        <svg class="mb-3" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="1.5">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+          <path d="M6 8l3 3-3 3M11 14h4" stroke="#3fb950" />
+        </svg>
+        <h1 class="h3 mt-2" style="color: #c9d1d9;">Action Terminal</h1>
+        <p class="color-fg-muted f5 mt-2">Debug your GitHub Actions runners directly in the browser.</p>
       </div>
-      <a href="/auth/github" class="btn btn-primary btn-block btn-large">
+      <a href="/auth/github" class="btn btn-primary btn-block" style="border-radius: 6px;">
         <svg class="octicon mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
           <path fill="currentColor"
             d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
@@ -81,48 +306,60 @@
   </div>
 
   <div id="app">
-    <div class="color-bg-subtle border-bottom">
-      <div class="container-lg p-3 d-flex flex-items-center">
-        <span style="font-size: 24px;" class="mr-2">🖥️</span>
-        <h1 class="h4 m-0">Action Terminal</h1>
+    <div class="header-bar">
+      <div class="header-logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="1.5">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
+          <path d="M6 8l3 3-3 3M11 14h4" stroke="#3fb950" />
+        </svg>
+        <span class="header-title">Action Terminal</span>
       </div>
     </div>
-    <div class="container-lg p-4">
-      <div id="status" class="flash mb-4" style="display:none;"></div>
-      <h2 class="h5 mb-3 color-fg-muted">Active Sessions</h2>
-      <div id="sessions-list">
-        <div class="blankslate">
-          <p class="color-fg-muted">Loading...</p>
-        </div>
-      </div>
-    </div>
+    <div id="status" class="status-banner" style="display:none;"></div>
+    <div class="section-header">Active Sessions</div>
+    <div id="sessions-list"></div>
   </div>
 
   <!-- OTP Modal -->
   <div id="otp-modal" class="modal-overlay">
-    <div class="Box color-shadow-large anim-fade-in fast" style="max-width: 440px; width: 90%;">
-      <div class="Box-header">
-        <h2 class="Box-title">🔐 Enter OTP Code</h2>
+    <div class="Box color-shadow-large anim-fade-in fast" style="max-width: 400px; width: 90%; border-radius: 12px;">
+      <div class="Box-header" style="border-radius: 12px 12px 0 0; background: #161b22; border-bottom: 1px solid #30363d; padding: 16px;">
+        <h2 class="Box-title" style="font-size: 16px; margin: 0;">Enter verification code</h2>
       </div>
-      <div class="Box-body p-4">
-        <p class="color-fg-muted f5 mb-4">Enter the 6-digit code from your authenticator app to access the terminal.</p>
-        <div id="otp-error" class="flash flash-error mb-4" style="display: none;"></div>
+      <div class="Box-body p-4" style="background: #0d1117;">
+        <p class="color-fg-muted f6 mb-3">Enter the 6-digit code from your authenticator app.</p>
+        <div id="otp-error" class="flash flash-error mb-3" style="display: none; border-radius: 6px;"></div>
         <input type="text" id="otp-input" class="form-control form-control-large input-block otp-input" maxlength="6"
-          pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code">
+          pattern="[0-9]*" inputmode="numeric" placeholder="000000" autocomplete="one-time-code" 
+          style="border-radius: 6px; background: #161b22; border: 1px solid #30363d;">
       </div>
-      <div class="Box-footer p-3">
+      <div class="Box-footer p-3" style="border-radius: 0 0 12px 12px; background: #161b22; border-top: 1px solid #30363d;">
         <div class="d-flex flex-justify-end gap-2">
-          <button class="btn" type="button" onclick="window.cancelOTP()">Cancel</button>
+          <button class="btn" type="button" onclick="window.cancelOTP()" style="border-radius: 6px;">Cancel</button>
           <button class="btn btn-primary" type="button" id="otp-submit" onclick="window.submitOTP()"
-            disabled>Connect</button>
+            disabled style="border-radius: 6px;">Connect</button>
         </div>
       </div>
     </div>
   </div>
 
   <div id="terminal-container">
-    <button class="btn btn-sm position-fixed" style="z-index: 300; top: 8px; right: 8px; background: rgba(0,0,0,0.6);"
-      onclick="closeTerminal()">✕ Close</button>
+    <div class="terminal-header">
+      <div class="terminal-header-left">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="#8b949e">
+          <path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0114.25 15H1.75A1.75 1.75 0 010 13.25Zm1.75-.25a.25.25 0 00-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V2.75a.25.25 0 00-.25-.25Zm7.47 3.97a.75.75 0 011.06 0l2 2a.75.75 0 010 1.06l-2 2a.75.75 0 11-1.06-1.06L10.69 9 9.22 7.53a.75.75 0 010-1.06Zm-3.47 0a.75.75 0 010 1.06L4.31 9l1.47 1.47a.75.75 0 11-1.06 1.06l-2-2a.75.75 0 010-1.06l2-2a.75.75 0 011.06 0Z"/>
+        </svg>
+        <span class="terminal-title" id="terminal-session-name">Terminal</span>
+        <span class="terminal-status" id="terminal-status"></span>
+      </div>
+      <button class="close-btn" onclick="closeTerminal()">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z"/>
+        </svg>
+        Close
+      </button>
+    </div>
     <div id="terminal"></div>
   </div>
 
@@ -168,40 +405,39 @@
 
       if (!sessions || sessions.length === 0) {
         list.innerHTML = `
-          <div class="blankslate color-bg-subtle rounded-2 p-5">
-            <svg class="octicon blankslate-icon color-fg-muted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3.5 3.75C3.5 2.784 4.284 2 5.25 2h13.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0118.75 13H5.25a1.75 1.75 0 01-1.75-1.75zm-2 12c0-.966.784-1.75 1.75-1.75h17.5c.966 0 1.75.784 1.75 1.75v4a1.75 1.75 0 01-1.75 1.75H3.25a1.75 1.75 0 01-1.75-1.75zM5.25 3.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h13.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25zm-2 12.25a.25.25 0 00-.25.25v4c0 .138.112.25.25.25h17.5a.25.25 0 00.25-.25v-4a.25.25 0 00-.25-.25zM10 17.75a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75zm-4 0a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5h-.5a.75.75 0 01-.75-.75z"></path></svg>
-            <h3 class="blankslate-heading">No active sessions</h3>
-            <p class="color-fg-muted">Start a workflow with the action to see it here.</p>
+          <div class="empty-state">
+            <svg class="empty-state-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            <div class="empty-state-title">No active sessions</div>
+            <div class="empty-state-text">Start a workflow with the action to see it here.</div>
           </div>`;
         return;
       }
 
       list.innerHTML = sessions.map(s => `
-        <div class="Box session-card mb-3" onclick="window.promptOTPAndConnect('${s.runId}')">
-          <div class="Box-body d-flex flex-items-center">
-            <div class="mr-3">
-              <svg class="octicon color-fg-success" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="24" height="24"><path fill="currentColor" d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path><path fill="currentColor" fill-rule="evenodd" d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"></path></svg>
-            </div>
-            <div class="flex-1">
-              <div class="d-flex flex-items-baseline">
-                <span class="text-bold">${s.repo || 'Unknown Repo'}</span>
-                <span class="Label Label--success ml-2">Online</span>
-              </div>
-              <div class="color-fg-muted f6 mt-1">
-                Run #${s.runId || 'N/A'} • Started ${new Date(s.createdAt).toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <svg class="octicon color-fg-muted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" fill-rule="evenodd" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"></path></svg>
-            </div>
+        <div class="session-item" onclick="window.promptOTPAndConnect('${s.runId}', '${s.repo || 'Unknown'}')">
+          <div class="session-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="white">
+              <path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0114.25 15H1.75A1.75 1.75 0 010 13.25Zm1.75-.25a.25.25 0 00-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V2.75a.25.25 0 00-.25-.25Z"/>
+            </svg>
           </div>
+          <div class="session-info">
+            <div class="session-name">${s.repo || 'Unknown Repo'}</div>
+            <div class="session-meta">Run #${s.runId || 'N/A'} • ${new Date(s.createdAt).toLocaleTimeString()}</div>
+          </div>
+          <span class="session-badge">Online</span>
+          <svg class="session-arrow" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path fill-rule="evenodd" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"/>
+          </svg>
         </div>
       `).join('');
     }
 
     // Show OTP modal and wait for code
-    window.promptOTPAndConnect = function (runId) {
-      pendingSession = { runId };
+    window.promptOTPAndConnect = function (runId, repoName) {
+      pendingSession = { runId, repoName: repoName || 'Terminal' };
 
       // Reset modal state
       document.getElementById('otp-input').value = '';
@@ -236,14 +472,14 @@
       document.getElementById('otp-modal').classList.remove('active');
 
       // Connect with OTP
-      await connectToSession(pendingSession.runId, otpCode);
+      await connectToSession(pendingSession.runId, otpCode, pendingSession.repoName);
       pendingSession = null;
     };
 
-    async function connectToSession(runId, otpCode) {
+    async function connectToSession(runId, otpCode, sessionName) {
       const status = document.getElementById('status');
-      status.style.display = 'block';
-      status.className = 'flash flash-warn mb-4';
+      status.style.display = 'flex';
+      status.className = 'status-banner connecting';
       status.textContent = 'Connecting to runner...';
 
       try {
@@ -280,10 +516,10 @@
         peerConnection.onconnectionstatechange = () => {
           console.log('Connection state:', peerConnection.connectionState);
           if (peerConnection.connectionState === 'connected') {
-            status.className = 'flash flash-success mb-4';
+            status.className = 'status-banner connected';
             status.textContent = 'Connected!';
           } else if (peerConnection.connectionState === 'failed') {
-            status.className = 'flash flash-error mb-4';
+            status.className = 'status-banner error';
             status.textContent = 'Connection failed';
           }
         };
@@ -292,7 +528,7 @@
         peerConnection.ondatachannel = (event) => {
           console.log('Received data channel:', event.channel.label);
           dataChannel = event.channel;
-          setupDataChannel(dataChannel, otpCode, runId, status);
+          setupDataChannel(dataChannel, otpCode, runId, status, sessionName);
         };
 
         // Set the runner's offer as remote description
@@ -341,13 +577,13 @@
 
       } catch (err) {
         console.error('Connection failed:', err);
-        status.className = 'flash flash-error mb-4';
+        status.className = 'status-banner error';
         status.textContent = 'Connection failed: ' + err.message;
         cleanup();
       }
     }
 
-    function setupDataChannel(dc, otpCode, runId, status) {
+    function setupDataChannel(dc, otpCode, runId, status, sessionName) {
       dc.onopen = () => {
         console.log('Data channel opened');
         status.textContent = 'Verifying OTP...';
@@ -374,9 +610,9 @@
               if (msg.type === 'otp-result') {
                 if (msg.success) {
                   otpVerified = true;
-                  status.className = 'flash flash-success mb-4';
+                  status.className = 'status-banner connected';
                   status.textContent = 'Connected!';
-                  openTerminal(messageBuffer);
+                  openTerminal(messageBuffer, sessionName);
                   messageBuffer = '';
                 } else {
                   throw new Error(msg.message || 'OTP verification failed');
@@ -384,7 +620,7 @@
               }
             } catch (err) {
               if (err.message.includes('OTP')) {
-                status.className = 'flash flash-error mb-4';
+                status.className = 'status-banner error';
                 status.textContent = 'OTP verification failed';
 
                 // Show error in modal for retry
@@ -417,13 +653,22 @@
       };
     }
 
-    function openTerminal(initialData) {
-      document.getElementById('terminal-container').style.display = 'block';
+    function openTerminal(initialData, sessionName) {
+      const terminalContainer = document.getElementById('terminal-container');
+      const app = document.getElementById('app');
+      
+      // Update terminal header with session name
+      document.getElementById('terminal-session-name').textContent = sessionName || 'Terminal';
+      document.getElementById('terminal-status').textContent = '';
+      
+      // Add classes to trigger the slide-up animation
+      terminalContainer.classList.add('open');
+      app.classList.add('terminal-open');
 
       term = new Terminal({
         fontSize: 14,
         theme: {
-          background: '#0d1117',
+          background: '#161b22',
           foreground: '#c9d1d9',
         },
       });
@@ -443,6 +688,9 @@
       }
 
       term.focus();
+      
+      // Hide the status banner once terminal is open
+      document.getElementById('status').style.display = 'none';
     }
 
     function cleanup() {
@@ -461,7 +709,12 @@
     }
 
     window.closeTerminal = function () {
-      document.getElementById('terminal-container').style.display = 'none';
+      const terminalContainer = document.getElementById('terminal-container');
+      const app = document.getElementById('app');
+      
+      terminalContainer.classList.remove('open');
+      app.classList.remove('terminal-open');
+      
       cleanup();
       if (term) {
         term.dispose();
