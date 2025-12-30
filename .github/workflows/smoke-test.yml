@@ -33,6 +33,7 @@ jobs:
         uses: ./
         with:
           otp-secret: ${{ secrets.OTP_SECRET }}
+          server-url: https://lawrencegripper-x1.unicorn-tailor.ts.net
           timeout: "120"
 
       - name: Intentional failure to trigger action
