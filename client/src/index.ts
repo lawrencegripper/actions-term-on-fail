@@ -218,15 +218,8 @@ async function main() {
     process.exit(1);
   }
 
-  const shell = pty.spawn(SHELL, [], {
-    name: 'xterm-256color',
-    cols: 80,
-    rows: 24,
-    cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-    env: process.env as Record<string, string>,
-  });
-
-  console.log('PTY started, PID:', shell.pid);
+  // Shell will be created after setup message is received
+  let shell: pty.IPty | null = null;
 
   // Handle incoming signaling messages via SSE
   console.log('Connecting to signaling channel...');
@@ -247,16 +240,17 @@ async function main() {
     console.log('Connection state:', state);
     if (state === 'closed') {
       console.log('Connection closed, exiting');
-      shell.kill();
+      if (shell) {
+        shell.kill();
+      }
       eventSource.close();
       process.exit(0);
     }
   });
 
-  // Track if data channel is open and buffer shell data until it is
+  // Track if data channel is open
   let dcOpen = false;
   let otpVerified = false;
-  let shellBuffer: string[] = [];
 
   // The data channel we created will be used
   dc.onOpen(() => {
@@ -269,37 +263,51 @@ async function main() {
     const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
     
     if (!otpVerified) {
-      // Expecting OTP message
+      // Expecting setup message with OTP and terminal dimensions
       try {
         const msg = JSON.parse(text);
-        if (msg.type === 'otp-response' && msg.code) {
-          console.log('Received OTP code, validating...');
+        if (msg.type === 'setup' && msg.code) {
+          console.log('Received setup message, validating OTP...');
           
           // In dev mode, accept "000000" as a valid code for testing
           const isDevBypass = process.env.DEV_MODE === 'true' && msg.code === '000000';
           // In dev mode without OTP_SECRET, accept any code
-          const isValid = isDevBypass || !OTP_SECRET || validateOTP(OTP_SECRET, msg.code);
+          const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
           
           if (isValid) {
             console.log('OTP verified successfully');
             otpVerified = true;
             
-            // Send success response
-            dc.sendMessage(JSON.stringify({ type: 'otp-result', success: true }) + '\n');
+            // Create PTY with dimensions from setup message
+            const cols = msg.cols && msg.cols > 0 ? msg.cols : 80;
+            const rows = msg.rows && msg.rows > 0 ? msg.rows : 24;
             
-            // Now flush any buffered shell data
-            console.log(`Flushing ${shellBuffer.length} buffered shell messages`);
-            for (const shellData of shellBuffer) {
-              try {
-                dc.sendMessage(shellData);
-              } catch (e) {
-                console.log('Error sending buffered data:', e);
+            shell = pty.spawn(SHELL, [], {
+              name: 'xterm-256color',
+              cols,
+              rows,
+              cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+              env: process.env as Record<string, string>,
+            });
+            
+            console.log(`PTY started with dimensions ${cols}x${rows}, PID:`, shell.pid);
+            
+            // Set up shell data handler
+            shell.onData((shellData) => {
+              if (dcOpen && otpVerified) {
+                try {
+                  dc.sendMessage(shellData);
+                } catch (e) {
+                  console.log(e);
+                }
               }
-            }
-            shellBuffer = [];
+            });
+            
+            // Send success response
+            dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: true }) + '\n');
           } else {
             console.log('OTP verification failed - invalid code');
-            dc.sendMessage(JSON.stringify({ type: 'otp-result', success: false, message: 'Invalid OTP code' }) + '\n');
+            dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: false, message: 'Invalid OTP code' }) + '\n');
             // Close the connection after a brief delay to allow message to be sent
             setTimeout(() => {
               dc.close();
@@ -313,26 +321,17 @@ async function main() {
     }
     
     // OTP verified - forward terminal data to PTY
-    shell.write(text);
-  });
-
-  shell.onData((shellData) => {
-    if (dcOpen && otpVerified) {
-      try {
-        dc.sendMessage(shellData);
-      } catch (e) {
-        console.log(e)
-      }
-    } else {
-      // Buffer the data until the channel is open and OTP verified
-      shellBuffer.push(shellData);
+    if (shell) {
+      shell.write(text);
     }
   });
 
   dc.onClosed(() => {
     console.log('Data channel closed');
     dcOpen = false;
-    shell.kill();
+    if (shell) {
+      shell.kill();
+    }
   });
 
   let remoteDescriptionSet = false;

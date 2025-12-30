@@ -170,14 +170,7 @@ async function main() {
     console.error("Failed to register:", err);
     process.exit(1);
   }
-  const shell = pty.spawn(SHELL, [], {
-    name: "xterm-256color",
-    cols: 80,
-    rows: 24,
-    cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-    env: process.env
-  });
-  console.log("PTY started, PID:", shell.pid);
+  let shell = null;
   console.log("Connecting to signaling channel...");
   const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, "Bearer " + oidcToken);
   eventSource.onopen = () => {
@@ -190,10 +183,17 @@ async function main() {
   };
   pc.onStateChange((state) => {
     console.log("Connection state:", state);
+    if (state === "closed") {
+      console.log("Connection closed, exiting");
+      if (shell) {
+        shell.kill();
+      }
+      eventSource.close();
+      process.exit(0);
+    }
   });
   let dcOpen = false;
   let otpVerified = false;
-  let shellBuffer = [];
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
     dcOpen = true;
@@ -203,26 +203,36 @@ async function main() {
     if (!otpVerified) {
       try {
         const msg = JSON.parse(text);
-        if (msg.type === "otp-response" && msg.code) {
-          console.log("Received OTP code, validating...");
+        if (msg.type === "setup" && msg.code) {
+          console.log("Received setup message, validating OTP...");
           const isDevBypass = process.env.DEV_MODE === "true" && msg.code === "000000";
-          const isValid = isDevBypass || !OTP_SECRET || validateOTP(OTP_SECRET, msg.code);
+          const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
           if (isValid) {
             console.log("OTP verified successfully");
             otpVerified = true;
-            dc.sendMessage(JSON.stringify({ type: "otp-result", success: true }) + "\n");
-            console.log(`Flushing ${shellBuffer.length} buffered shell messages`);
-            for (const shellData of shellBuffer) {
-              try {
-                dc.sendMessage(shellData);
-              } catch (e) {
-                console.log("Error sending buffered data:", e);
+            const cols = msg.cols && msg.cols > 0 ? msg.cols : 80;
+            const rows = msg.rows && msg.rows > 0 ? msg.rows : 24;
+            shell = pty.spawn(SHELL, [], {
+              name: "xterm-256color",
+              cols,
+              rows,
+              cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+              env: process.env
+            });
+            console.log(`PTY started with dimensions ${cols}x${rows}, PID:`, shell.pid);
+            shell.onData((shellData) => {
+              if (dcOpen && otpVerified) {
+                try {
+                  dc.sendMessage(shellData);
+                } catch (e) {
+                  console.log(e);
+                }
               }
-            }
-            shellBuffer = [];
+            });
+            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: true }) + "\n");
           } else {
             console.log("OTP verification failed - invalid code");
-            dc.sendMessage(JSON.stringify({ type: "otp-result", success: false, message: "Invalid OTP code" }) + "\n");
+            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Invalid OTP code" }) + "\n");
             setTimeout(() => {
               dc.close();
             }, 100);
@@ -233,23 +243,16 @@ async function main() {
       }
       return;
     }
-    shell.write(text);
-  });
-  shell.onData((shellData) => {
-    if (dcOpen && otpVerified) {
-      try {
-        dc.sendMessage(shellData);
-      } catch (e) {
-        console.log(e);
-      }
-    } else {
-      shellBuffer.push(shellData);
+    if (shell) {
+      shell.write(text);
     }
   });
   dc.onClosed(() => {
     console.log("Data channel closed");
     dcOpen = false;
-    shell.kill();
+    if (shell) {
+      shell.kill();
+    }
   });
   let remoteDescriptionSet = false;
   eventSource.onmessage = async (event) => {

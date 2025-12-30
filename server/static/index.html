@@ -366,12 +366,13 @@
   </div>
 
   <script type="module">
-    import { init, Terminal } from 'https://cdn.jsdelivr.net/npm/ghostty-web@0.4.0/+esm'
+    import { init, Terminal, FitAddon } from 'https://cdn.jsdelivr.net/npm/ghostty-web@0.4.0/+esm'
 
     // Initialize ghostty WASM
     await init();
 
     let term = null;
+    let fitAddon = null;
     let peerConnection = null;
     let dataChannel = null;
     let eventSource = null;
@@ -384,6 +385,19 @@
         { urls: 'stun:stun1.l.google.com:19302' },
       ]
     };
+
+    // Terminal font settings
+    const TERMINAL_FONT_SIZE = 12;
+    const CHAR_WIDTH = TERMINAL_FONT_SIZE * 0.6; // Approximate character width for monospace
+    const LINE_HEIGHT = TERMINAL_FONT_SIZE * 1.2; // Approximate line height
+    const TERMINAL_HEADER_HEIGHT = 41; // Height of terminal header bar
+
+    // Calculate terminal dimensions based on pixel dimensions
+    function calculateTerminalDimensions(width, height) {
+      const cols = Math.floor(width / CHAR_WIDTH * 2);
+      const rows = Math.floor(height / LINE_HEIGHT);
+      return { cols, rows };
+    }
 
     // Check auth
     async function checkAuth() {
@@ -590,8 +604,14 @@
         console.log('Data channel opened');
         status.textContent = 'Verifying OTP...';
 
-        // Send OTP code for verification
-        dc.send(JSON.stringify({ type: 'otp-response', code: otpCode }));
+        // Calculate terminal dimensions based on expected terminal container size
+        // Terminal will be 66.67vh minus the header height
+        const terminalHeight = (window.innerHeight * 0.6667) - TERMINAL_HEADER_HEIGHT;
+        const terminalWidth = window.innerWidth;
+        const { cols, rows } = calculateTerminalDimensions(terminalWidth, terminalHeight);
+        
+        console.log(`Sending setup with dimensions: ${cols}x${rows}`);
+        dc.send(JSON.stringify({ type: 'setup', code: otpCode, cols, rows }));
       };
 
       let otpVerified = false;
@@ -609,7 +629,7 @@
 
             try {
               const msg = JSON.parse(line);
-              if (msg.type === 'otp-result') {
+              if (msg.type === 'setup-complete') {
                 if (msg.success) {
                   otpVerified = true;
                   status.className = 'status-banner connected';
@@ -658,6 +678,7 @@
     function openTerminal(initialData, sessionName) {
       const terminalContainer = document.getElementById('terminal-container');
       const app = document.getElementById('app');
+      const terminalElement = document.getElementById('terminal');
       
       // Update terminal header with session name
       document.getElementById('terminal-session-name').textContent = sessionName || 'Terminal';
@@ -667,32 +688,57 @@
       terminalContainer.classList.add('open');
       app.classList.add('terminal-open');
 
-      term = new Terminal({
-        fontSize: 14,
-        theme: {
-          background: '#161b22',
-          foreground: '#c9d1d9',
-        },
-      });
+      // Wait for CSS transition to complete before creating terminal
+      setTimeout(async () => {
+        // Calculate dimensions based on actual element size
+        const rect = terminalElement.getBoundingClientRect();
+        const { cols, rows } = calculateTerminalDimensions(rect.width, rect.height);
+        
+        console.log(`Terminal dimensions: ${cols}x${rows} (${rect.width}x${rect.height}px)`);
 
-      term.open(document.getElementById('terminal'));
+        term = new Terminal({
+          fontSize: TERMINAL_FONT_SIZE,
+          columns: cols,
+          rows: rows,
+          theme: {
+            background: '#161b22',
+            foreground: '#c9d1d9',
+          },
+        });
 
-      // Handle terminal input
-      term.onData(data => {
-        if (dataChannel && dataChannel.readyState === 'open') {
-          dataChannel.send(data);
+        // Load FitAddon for proper resizing
+        fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+
+        await term.open(terminalElement);
+        
+        // Fit terminal to container
+        fitAddon.fit();
+
+        // Handle terminal input
+        term.onData(data => {
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(data);
+          }
+        });
+
+        // Write any initial data
+        if (initialData) {
+          term.write(initialData);
+        }
+
+        term.focus();
+        
+        // Hide the status banner once terminal is open
+        document.getElementById('status').style.display = 'none';
+      }, 350); // Wait for CSS transition (300ms + buffer)
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+        if (fitAddon) {
+          fitAddon.fit();
         }
       });
-
-      // Write any initial data
-      if (initialData) {
-        term.write(initialData);
-      }
-
-      term.focus();
-      
-      // Hide the status banner once terminal is open
-      document.getElementById('status').style.display = 'none';
     }
 
     function cleanup() {
@@ -722,6 +768,7 @@
         term.dispose();
         term = null;
       }
+      fitAddon = null;
       document.getElementById('status').style.display = 'none';
     };
 
