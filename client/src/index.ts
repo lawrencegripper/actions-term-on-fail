@@ -245,6 +245,12 @@ async function main() {
   // Set up data channel handler before receiving answer
   pc.onStateChange((state) => {
     console.log('Connection state:', state);
+    if (state === 'closed') {
+      console.log('Connection closed, exiting');
+      shell.kill();
+      eventSource.close();
+      process.exit(0);
+    }
   });
 
   // Track if data channel is open and buffer shell data until it is
