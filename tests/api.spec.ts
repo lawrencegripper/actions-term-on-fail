@@ -29,7 +29,6 @@ test.describe('Development Mode Server Integration', () => {
     expect(content).toContain('Action Terminal');
     expect(content).toContain('vue-app');
     
-    console.log('✓ Main page served correctly');
   });
 
   test('should serve static assets', async ({ request }) => {
@@ -42,7 +41,6 @@ test.describe('Development Mode Server Integration', () => {
     const cssResponse = await request.get('/styles.css');
     expect(cssResponse.status()).toBe(200);
     
-    console.log('✓ Static assets served correctly');
   });
 
   test('should redirect to login for unauthenticated API requests', async ({ request }) => {
@@ -50,7 +48,6 @@ test.describe('Development Mode Server Integration', () => {
     // Should get 401 Unauthorized
     expect(response.status()).toBe(401);
     
-    console.log('✓ API authentication check works');
   });
 
   test('should authenticate in dev mode via URL parameter', async ({ page }) => {
@@ -66,7 +63,6 @@ test.describe('Development Mode Server Integration', () => {
     expect(tokenCookie).toBeDefined();
     expect(tokenCookie?.value).toBeTruthy();
     
-    console.log('✓ Dev mode authentication successful');
   });
 
   test('should return empty sessions list for authenticated user', async ({ page }) => {
@@ -90,7 +86,6 @@ test.describe('Development Mode Server Integration', () => {
     // null or array are both acceptable (null when no sessions)
     expect(sessions === null || Array.isArray(sessions)).toBe(true);
     
-    console.log('✓ Sessions endpoint returns correct format');
   });
 
   test('should accept runner registration with dev token', async ({ request }) => {
@@ -111,7 +106,6 @@ test.describe('Development Mode Server Integration', () => {
     const result = await registerResponse.json();
     expect(result.status).toBe('ok');
     
-    console.log('✓ Runner registration works');
   });
 
   test('should reject runner registration without auth', async ({ request }) => {
@@ -124,7 +118,6 @@ test.describe('Development Mode Server Integration', () => {
     
     expect(registerResponse.status()).toBe(401);
     
-    console.log('✓ Runner registration requires authentication');
   });
 
   test('should list registered sessions for authenticated user', async ({ page, request }) => {
@@ -155,7 +148,6 @@ test.describe('Development Mode Server Integration', () => {
     
     expect(result.status).toBe(200);
     
-    console.log('✓ Session registration and listing works');
   });
 
   test('should isolate sessions between different users', async ({ page, request }) => {
@@ -201,7 +193,6 @@ test.describe('Development Mode Server Integration', () => {
     
     expect(result.status).toBe(200);
     
-    console.log('✓ Session isolation between users works');
   });
 
   test('should return WebRTC details for authorized session', async ({ page, request }) => {
@@ -238,7 +229,6 @@ test.describe('Development Mode Server Integration', () => {
     expect(result.body.ice).toBeDefined();
     expect(result.body.offer).toBeDefined();
     
-    console.log('✓ WebRTC details endpoint works');
   });
 
   test('should reject WebRTC details for unauthorized user', async ({ page, request }) => {
@@ -271,7 +261,6 @@ test.describe('Development Mode Server Integration', () => {
     
     expect(result.status).toBe(403);
     
-    console.log('✓ WebRTC access control works');
   });
 
   test('should handle answer submission for valid session', async ({ page, request }) => {
@@ -311,7 +300,6 @@ test.describe('Development Mode Server Integration', () => {
     // Will return 503 because runner SSE client not connected, which is expected
     expect([200, 503].includes(result.status)).toBeTruthy();
     
-    console.log('✓ Answer endpoint accepts requests');
   });
 });
 
@@ -321,6 +309,5 @@ test.describe('OTP Validation Logic', () => {
     expect(DEV_OTP_SECRET).toBeTruthy();
     expect(DEV_OTP_SECRET.length).toBeGreaterThan(0);
     
-    console.log('✓ OTP secret is configured for testing');
   });
 });
