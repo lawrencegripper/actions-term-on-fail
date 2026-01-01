@@ -20,8 +20,11 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
-const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
-const githubJWKSURL = "https://token.actions.githubusercontent.com/.well-known/jwks"
+const (
+	githubOIDCIssuer = "https://token.actions.githubusercontent.com"
+	githubJWKSURL    = "https://token.actions.githubusercontent.com/.well-known/jwks"
+	devTokenParts    = 5 // dev token format: "dev:actor:owner:repo:runId:runAttemptNum"
+)
 
 var oidcExpectedAudience string
 
@@ -88,8 +91,9 @@ func init() {
 }
 
 // makeCompositeKey creates a unique identifier from owner, repo, runId, and runAttemptNum
+// Uses pipe (|) as delimiter which is not allowed in GitHub repository names
 func makeCompositeKey(owner, repo, runID, runAttemptNum string) string {
-	return fmt.Sprintf("%s/%s/%s/%s", owner, repo, runID, runAttemptNum)
+	return fmt.Sprintf("%s|%s|%s|%s", owner, repo, runID, runAttemptNum)
 }
 
 func main() {
@@ -189,7 +193,7 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, owner
 		if os.Getenv("DEV_MODE") != "true" {
 			return "", "", "", "", "", fmt.Errorf("dev tokens only accepted in DEV_MODE")
 		}
-		parts := splitN(tokenStr[4:], ":", 5)
+		parts := splitN(tokenStr[4:], ":", devTokenParts)
 		if len(parts) >= 1 {
 			actor = parts[0]
 		}
