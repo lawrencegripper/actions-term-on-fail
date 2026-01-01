@@ -7,6 +7,31 @@ import (
 	"testing"
 )
 
+// setupDevMode sets the DEV_MODE environment variable and global isDevMode flag for testing
+// Returns a cleanup function that should be deferred
+func setupDevMode(devMode string) func() {
+	originalDevMode := os.Getenv("DEV_MODE")
+	originalIsDevMode := isDevMode
+
+	if devMode != "" {
+		os.Setenv("DEV_MODE", devMode)
+	} else {
+		os.Unsetenv("DEV_MODE")
+	}
+
+	// Update the global isDevMode variable to reflect the test environment
+	isDevMode = os.Getenv("DEV_MODE") == "true"
+
+	return func() {
+		if originalDevMode != "" {
+			os.Setenv("DEV_MODE", originalDevMode)
+		} else {
+			os.Unsetenv("DEV_MODE")
+		}
+		isDevMode = originalIsDevMode
+	}
+}
+
 // TestSetAuthCookieSecurityAttributes verifies that authentication cookies
 // have proper security attributes set to prevent common web vulnerabilities
 func TestSetAuthCookieSecurityAttributes(t *testing.T) {
@@ -38,26 +63,9 @@ func TestSetAuthCookieSecurityAttributes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up environment
-			originalDevMode := os.Getenv("DEV_MODE")
-			originalIsDevMode := isDevMode
-			defer func() {
-				if originalDevMode != "" {
-					os.Setenv("DEV_MODE", originalDevMode)
-				} else {
-					os.Unsetenv("DEV_MODE")
-				}
-				isDevMode = originalIsDevMode
-			}()
-
-			if tt.devMode != "" {
-				os.Setenv("DEV_MODE", tt.devMode)
-			} else {
-				os.Unsetenv("DEV_MODE")
-			}
-
-			// Update the global isDevMode variable to reflect the test environment
-			isDevMode = os.Getenv("DEV_MODE") == "true"
+			// Set up environment and restore on cleanup
+			cleanup := setupDevMode(tt.devMode)
+			defer cleanup()
 
 			// Create a test response recorder
 			w := httptest.NewRecorder()
@@ -119,18 +127,8 @@ func TestSetAuthCookieSecurityAttributes(t *testing.T) {
 // TestSetAuthCookieValueFormat verifies the JWT token format and structure
 func TestSetAuthCookieValueFormat(t *testing.T) {
 	// Ensure dev mode for testing
-	originalDevMode := os.Getenv("DEV_MODE")
-	originalIsDevMode := isDevMode
-	os.Setenv("DEV_MODE", "true")
-	isDevMode = true
-	defer func() {
-		if originalDevMode != "" {
-			os.Setenv("DEV_MODE", originalDevMode)
-		} else {
-			os.Unsetenv("DEV_MODE")
-		}
-		isDevMode = originalIsDevMode
-	}()
+	cleanup := setupDevMode("true")
+	defer cleanup()
 
 	w := httptest.NewRecorder()
 	testUsername := "securitytestuser"
@@ -161,6 +159,7 @@ func TestSetAuthCookieValueFormat(t *testing.T) {
 	// Verify cookie value is not empty and has substantial length
 	// JWT format: base64(header).base64(payload).base64(signature)
 	// Minimum would be header (~36) + payload (~40) + signature (~43) + 2 dots = ~121 chars
+	// We use 100 as a conservative threshold to allow for minimal payloads
 	if len(cookie.Value) < 100 {
 		t.Errorf("Cookie value suspiciously short for a JWT token: %d characters (expected at least 100)", len(cookie.Value))
 	}
@@ -169,13 +168,8 @@ func TestSetAuthCookieValueFormat(t *testing.T) {
 // TestCookieSecurityAttributesCombination verifies all security attributes work together
 func TestCookieSecurityAttributesCombination(t *testing.T) {
 	// Test in production mode
-	originalIsDevMode := isDevMode
-	os.Setenv("DEV_MODE", "false")
-	isDevMode = false
-	defer func() {
-		os.Unsetenv("DEV_MODE")
-		isDevMode = originalIsDevMode
-	}()
+	cleanup := setupDevMode("false")
+	defer cleanup()
 
 	w := httptest.NewRecorder()
 	setAuthCookie(w, "produser")
