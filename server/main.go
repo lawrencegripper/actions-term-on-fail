@@ -43,7 +43,7 @@ var (
 	actorToSessions = make(map[string]*Session) // actor -> session
 	runIdToSessions = make(map[string]*Session) // runId -> session
 	sessionsMu      sync.RWMutex
-	sseClients      = make(map[string]*SSEClient) // actor -> SSE client (runner)
+	runIdSseClient  = make(map[string]*SSEClient) // runId -> SSE client (runner)
 	sseClientsMu    sync.RWMutex
 	jwtSecret       []byte
 	oauthConfig     *oauth2.Config
@@ -249,12 +249,12 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	// Get OIDC token from Authorization header (for runner clients)
 	oidcToken := extractBearerToken(r)
 
-	var actor string
+	var actor, runId string
 
 	if oidcToken != "" {
 		// Runner client - validate OIDC token
 		var err error
-		actor, _, _, err = validateGitHubOIDCToken(r.Context(), oidcToken)
+		actor, _, runId, err = validateGitHubOIDCToken(r.Context(), oidcToken)
 		if err != nil {
 			log.Printf("SSE OIDC validation failed: %v", err)
 			http.Error(w, "invalid OIDC token: "+err.Error(), http.StatusUnauthorized)
@@ -286,15 +286,15 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	// Register client
 	sseClientsMu.Lock()
 	// Runner client - keyed by actor
-	sseClients[actor] = client
-	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(sseClients))
+	runIdSseClient[runId] = client
+	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(runIdSseClient))
 	sseClientsMu.Unlock()
 
 	// Cleanup on disconnect
 	defer func() {
 		sseClientsMu.Lock()
-		delete(sseClients, actor)
-		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(sseClients))
+		delete(runIdSseClient, runId)
+		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(runIdSseClient))
 		sseClientsMu.Unlock()
 		close(client.Done)
 	}()
@@ -402,7 +402,7 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 
 	// Forward answer and ICE candidates to the runner via SSE
 	sseClientsMu.RLock()
-	client, ok := sseClients[sess.Actor]
+	client, ok := runIdSseClient[sess.RunID]
 	sseClientsMu.RUnlock()
 
 	if !ok {
@@ -476,7 +476,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sseClientsMu.RLock()
 	var activeSessions []*Session
 	for _, sess := range userSessions {
-		if _, ok := sseClients[sess.Actor]; ok {
+		if _, ok := runIdSseClient[sess.RunID]; ok {
 			activeSessions = append(activeSessions, sess)
 		}
 	}
