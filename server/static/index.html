@@ -778,6 +778,9 @@
         }
 
         term.focus();
+
+        // Send an Enter key to initialize the terminal
+        term.write('\r');
         
         // Hide the status banner once terminal is open
         document.getElementById('status').style.display = 'none';
