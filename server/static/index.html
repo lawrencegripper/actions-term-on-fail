@@ -102,7 +102,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0114.25 15H1.75A1.75 1.75 0 010 13.25Zm1.75-.25a.25.25 0 00-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V2.75a.25.25 0 00-.25-.25Z"/>
         </svg>
-        New session: {{ message.session?.repo || 'Unknown' }} #{{ message.session?.runId || 'N/A' }} — Click to connect
+        New session: {{ message.session?.repo || 'Unknown' }} #{{ message.session?.runId || 'N/A' }}{{ message.session?.runAttemptNum ? ` (Attempt ${message.session.runAttemptNum})` : '' }} — Click to connect
       </template>
       <!-- Notification Prompt -->
       <template v-else-if="message.type === 'notification-prompt'">
