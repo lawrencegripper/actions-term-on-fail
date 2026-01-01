@@ -499,7 +499,7 @@ func usernameFromCookieOrError(r *http.Request) (string, error) {
 
 // handleGitHubAuth - Redirect to GitHub OAuth
 func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
-	if oauthConfig.ClientID == "" {
+	if os.Getenv("DEV_MODE") == "true" {
 		handleDevAuth(w, r)
 		return
 	}
@@ -509,7 +509,7 @@ func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
 
 // handleGitHubCallback - OAuth callback
 func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	if oauthConfig.ClientID == "" {
+	if os.Getenv("DEV_MODE") == "true" {
 		handleDevAuth(w, r)
 		return
 	}
@@ -560,7 +560,7 @@ input{padding:10px;margin:10px 0;width:100%;box-sizing:border-box;background:#0d
 button{padding:10px 20px;background:#238636;color:white;border:none;border-radius:4px;cursor:pointer;width:100%}
 button:hover{background:#2ea043}</style></head>
 <body><form action="/auth/github/callback" method="get">
-<h2>🖥️ Dev Login</h2>
+<h2> DEVMODE: Mock Login</h2>
 <input name="user" placeholder="GitHub username" required>
 <button type="submit">Login</button>
 </form></body></html>`)
