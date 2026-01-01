@@ -40,12 +40,14 @@ func TestSetAuthCookieSecurityAttributes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment
 			originalDevMode := os.Getenv("DEV_MODE")
+			originalIsDevMode := isDevMode
 			defer func() {
 				if originalDevMode != "" {
 					os.Setenv("DEV_MODE", originalDevMode)
 				} else {
 					os.Unsetenv("DEV_MODE")
 				}
+				isDevMode = originalIsDevMode
 			}()
 
 			if tt.devMode != "" {
@@ -53,6 +55,9 @@ func TestSetAuthCookieSecurityAttributes(t *testing.T) {
 			} else {
 				os.Unsetenv("DEV_MODE")
 			}
+
+			// Update the global isDevMode variable to reflect the test environment
+			isDevMode = os.Getenv("DEV_MODE") == "true"
 
 			// Create a test response recorder
 			w := httptest.NewRecorder()
@@ -115,13 +120,16 @@ func TestSetAuthCookieSecurityAttributes(t *testing.T) {
 func TestSetAuthCookieValueFormat(t *testing.T) {
 	// Ensure dev mode for testing
 	originalDevMode := os.Getenv("DEV_MODE")
+	originalIsDevMode := isDevMode
 	os.Setenv("DEV_MODE", "true")
+	isDevMode = true
 	defer func() {
 		if originalDevMode != "" {
 			os.Setenv("DEV_MODE", originalDevMode)
 		} else {
 			os.Unsetenv("DEV_MODE")
 		}
+		isDevMode = originalIsDevMode
 	}()
 
 	w := httptest.NewRecorder()
@@ -150,17 +158,24 @@ func TestSetAuthCookieValueFormat(t *testing.T) {
 		t.Errorf("Cookie value doesn't appear to be a valid JWT format (expected 2 dots, got %d)", parts)
 	}
 
-	// Verify cookie value is reasonably long (JWT tokens should be substantial)
-	if len(cookie.Value) < 50 {
-		t.Errorf("Cookie value suspiciously short for a JWT token: %d characters", len(cookie.Value))
+	// Verify cookie value is not empty and has substantial length
+	// JWT format: base64(header).base64(payload).base64(signature)
+	// Minimum would be header (~36) + payload (~40) + signature (~43) + 2 dots = ~121 chars
+	if len(cookie.Value) < 100 {
+		t.Errorf("Cookie value suspiciously short for a JWT token: %d characters (expected at least 100)", len(cookie.Value))
 	}
 }
 
 // TestCookieSecurityAttributesCombination verifies all security attributes work together
 func TestCookieSecurityAttributesCombination(t *testing.T) {
 	// Test in production mode
+	originalIsDevMode := isDevMode
 	os.Setenv("DEV_MODE", "false")
-	defer os.Unsetenv("DEV_MODE")
+	isDevMode = false
+	defer func() {
+		os.Unsetenv("DEV_MODE")
+		isDevMode = originalIsDevMode
+	}()
 
 	w := httptest.NewRecorder()
 	setAuthCookie(w, "produser")

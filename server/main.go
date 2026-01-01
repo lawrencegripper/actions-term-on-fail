@@ -52,6 +52,7 @@ var (
 	jwtSecret            []byte
 	oauthConfig          *oauth2.Config
 	jwkCache             *jwk.Cache
+	isDevMode            bool
 )
 
 func init() {
@@ -63,6 +64,12 @@ func init() {
 		log.Println("Generated random JWT secret (set JWT_SECRET in production)")
 	}
 	jwtSecret = []byte(secret)
+
+	// Initialize dev mode flag for cookie security
+	isDevMode = os.Getenv("DEV_MODE") == "true"
+	if isDevMode {
+		log.Println("DEV_MODE enabled - cookie Secure flag will be disabled")
+	}
 
 	// GitHub OAuth config
 	oauthConfig = &oauth2.Config{
@@ -702,10 +709,6 @@ func setAuthCookie(w http.ResponseWriter, username string) {
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
 	})
 	tokenStr, _ := token.SignedString(jwtSecret)
-
-	// Determine if we're in dev mode to set Secure flag appropriately
-	// In production, Secure flag ensures cookies are only sent over HTTPS
-	isDevMode := os.Getenv("DEV_MODE") == "true"
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
