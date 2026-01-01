@@ -23,6 +23,8 @@ import (
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 const githubJWKSURL = "https://token.actions.githubusercontent.com/.well-known/jwks"
 
+var oidcExpectedAudience string
+
 // Session represents a registered action runner
 type Session struct {
 	Actor     string          `json:"actor"`
@@ -70,6 +72,13 @@ func init() {
 		RedirectURL:  os.Getenv("GITHUB_REDIRECT_URI"),
 		Scopes:       []string{"read:user"},
 	}
+
+	// Initialize expected OIDC audience
+	oidcExpectedAudience = os.Getenv("OIDC_EXPECTED_AUDIENCE")
+	if oidcExpectedAudience == "" {
+		oidcExpectedAudience = "http://localhost:7373"
+	}
+	log.Printf("OIDC audience validation enabled: %s", oidcExpectedAudience)
 
 	// Initialize JWKS cache for GitHub Actions OIDC
 	jwkCache = jwk.NewCache(context.Background())
@@ -198,12 +207,14 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo,
 	}
 
 	// Parse and validate token with clock skew tolerance
-	token, err := jwtx.Parse([]byte(tokenStr),
+	parseOpts := []jwtx.ParseOption{
 		jwtx.WithKeySet(keySet),
 		jwtx.WithIssuer(githubOIDCIssuer),
 		jwtx.WithValidate(true),
-		jwtx.WithAcceptableSkew(2*time.Minute),
-	)
+		jwtx.WithAcceptableSkew(2 * time.Minute),
+		jwtx.WithAudience(oidcExpectedAudience),
+	}
+	token, err := jwtx.Parse([]byte(tokenStr), parseOpts...)
 	if err != nil {
 		return "", "", "", fmt.Errorf("token validation failed: %w", err)
 	}
