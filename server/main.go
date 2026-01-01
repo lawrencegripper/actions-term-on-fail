@@ -183,7 +183,7 @@ func extractBearerToken(r *http.Request) string {
 func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo, runID string, err error) {
 	// Dev mode with mock token format: "dev:actor:repo:runId"
 	if len(tokenStr) >= 4 && tokenStr[:4] == "dev:" {
-		if os.Getenv("DEV_MODE") != "true" {
+		if !isDevMode {
 			return "", "", "", fmt.Errorf("dev tokens only accepted in DEV_MODE")
 		}
 		parts := splitN(tokenStr[4:], ":", 3)
@@ -631,7 +631,7 @@ func usernameFromCookieOrError(r *http.Request) (string, error) {
 
 // handleGitHubAuth - Redirect to GitHub OAuth
 func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("DEV_MODE") == "true" {
+	if isDevMode {
 		handleDevAuth(w, r)
 		return
 	}
@@ -641,7 +641,7 @@ func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
 
 // handleGitHubCallback - OAuth callback
 func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("DEV_MODE") == "true" {
+	if isDevMode {
 		handleDevAuth(w, r)
 		return
 	}
