@@ -3,12 +3,13 @@ import * as core from '@actions/core';
 import * as OTPAuth from 'otpauth';
 
 // Validate OTP secret by attempting to create a TOTP instance (same as index.ts)
+// Security: Uses SHA256 instead of deprecated SHA1 for stronger cryptographic security
 function validateOTPSecret(secret: string): { valid: boolean; error?: string } {
   try {
     new OTPAuth.TOTP({
       issuer: 'ActionTerminal',
       label: 'Terminal',
-      algorithm: 'SHA1',
+      algorithm: 'SHA256',
       digits: 6,
       period: 30,
       secret: OTPAuth.Secret.fromBase32(secret),

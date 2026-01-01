@@ -150,6 +150,7 @@ function setupDataChannel(dc, otpCode, runId, sessionName, callbacks) {
     const { cols, rows } = calculateTerminalDimensions(terminalWidth, terminalHeight);
     
     console.log(`Sending setup with dimensions: ${cols}x${rows}`);
+    // Security: OTP code intentionally not logged to prevent exposure
     dc.send(JSON.stringify({ type: 'setup', code: otpCode, cols, rows }));
   };
 

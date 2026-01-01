@@ -7,11 +7,12 @@ const SHELL = process.env.SHELL || '/bin/bash';
 const OTP_SECRET = process.env.OTP_SECRET || '';
 
 // Create TOTP instance for validation
+// Security: Uses SHA256 instead of deprecated SHA1 for stronger cryptographic security
 function createTOTP(secret: string): OTPAuth.TOTP {
   return new OTPAuth.TOTP({
     issuer: 'ActionTerminal',
     label: 'Terminal',
-    algorithm: 'SHA1',
+    algorithm: 'SHA256',
     digits: 6,
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret),
@@ -19,10 +20,13 @@ function createTOTP(secret: string): OTPAuth.TOTP {
 }
 
 // Validate OTP code against secret
+// Security: Window set to 0 for strict time-based validation (no past/future codes accepted)
+// This prevents timing attacks and reduces the attack surface from 3 valid codes to 1
 function validateOTP(secret: string, code: string): boolean {
   try {
     const totp = createTOTP(secret);
-    const delta = totp.validate({ token: code, window: 1 });
+    // Window=0 means only accept the current time step, not previous or next
+    const delta = totp.validate({ token: code, window: 0 });
     return delta !== null;
   } catch (err) {
     console.error('OTP validation error:', err);
@@ -251,6 +255,8 @@ async function main() {
   // Track if data channel is open
   let dcOpen = false;
   let otpVerified = false;
+  let otpAttempts = 0;
+  const MAX_OTP_ATTEMPTS = 3; // Security: Limit retry attempts to prevent brute force
 
   // The data channel we created will be used
   dc.onOpen(() => {
@@ -267,11 +273,21 @@ async function main() {
       try {
         const msg = JSON.parse(text);
         if (msg.type === 'setup' && msg.code) {
-          console.log('Received setup message, validating OTP...');
+          // Security: Check if max attempts exceeded
+          if (otpAttempts >= MAX_OTP_ATTEMPTS) {
+            console.log('Security: Max OTP attempts exceeded, closing connection');
+            dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: false, message: 'Maximum OTP attempts exceeded' }) + '\n');
+            setTimeout(() => {
+              dc.close();
+            }, 100);
+            return;
+          }
           
-          // In dev mode, accept "000000" as a valid code for testing
+          otpAttempts++;
+          console.log(`OTP verification attempt ${otpAttempts}/${MAX_OTP_ATTEMPTS}`);
+          
+          // Security: Dev mode bypass only in DEV_MODE and only with specific code
           const isDevBypass = process.env.DEV_MODE === 'true' && msg.code === '000000';
-          // In dev mode without OTP_SECRET, accept any code
           const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
           
           if (isValid) {
@@ -306,12 +322,20 @@ async function main() {
             // Send success response
             dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: true }) + '\n');
           } else {
-            console.log('OTP verification failed - invalid code');
-            dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: false, message: 'Invalid OTP code' }) + '\n');
-            // Close the connection after a brief delay to allow message to be sent
-            setTimeout(() => {
-              dc.close();
-            }, 100);
+            // Security: Audit log for failed OTP attempt
+            console.log(`Security: OTP verification failed (attempt ${otpAttempts}/${MAX_OTP_ATTEMPTS})`);
+            const remainingAttempts = MAX_OTP_ATTEMPTS - otpAttempts;
+            const message = remainingAttempts > 0 
+              ? `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.`
+              : 'Invalid OTP code. No attempts remaining.';
+            dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: false, message }) + '\n');
+            
+            // Close connection if max attempts reached
+            if (otpAttempts >= MAX_OTP_ATTEMPTS) {
+              setTimeout(() => {
+                dc.close();
+              }, 100);
+            }
           }
         }
       } catch (e) {

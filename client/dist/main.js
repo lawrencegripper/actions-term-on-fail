@@ -6,7 +6,7 @@ function validateOTPSecret(secret) {
     new OTPAuth.TOTP({
       issuer: "ActionTerminal",
       label: "Terminal",
-      algorithm: "SHA1",
+      algorithm: "SHA256",
       digits: 6,
       period: 30,
       secret: OTPAuth.Secret.fromBase32(secret)

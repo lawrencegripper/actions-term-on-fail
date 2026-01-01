@@ -87,16 +87,23 @@ jobs:
 Generate a Base32 secret and add it to your GitHub repository secrets:
 
 ```bash
-# Generate a random secret
-python3 -c "import secrets, base64; print(base64.b32encode(secrets.token_bytes(20)).decode())"
+# Generate a random secret (recommended: 32 bytes for 256-bit security)
+python3 -c "import secrets, base64; print(base64.b32encode(secrets.token_bytes(32)).decode())"
 ```
 
 Then add this to your authenticator app (Google Authenticator, 1Password, etc.) using:
 - **Issuer**: ActionTerminal
 - **Account**: Terminal
-- **Algorithm**: SHA1
+- **Algorithm**: SHA256 (Important: Not SHA1)
 - **Digits**: 6
 - **Period**: 30 seconds
+
+**Security Notes:**
+- Use SHA256 algorithm (not SHA1) for enhanced cryptographic security
+- Store the OTP secret securely in GitHub Secrets, never commit it to the repository
+- Each OTP code is valid for only the current 30-second time window (no grace period)
+- Failed OTP attempts are limited to 3 tries per connection to prevent brute-force attacks
+- OTP codes are not logged to prevent accidental exposure
 
 **How it works:** The action registers during setup but only starts the terminal in the **post-job hook** if the workflow fails. No need for `if: failure()` - just add it early in your workflow.
 

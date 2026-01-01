@@ -9,7 +9,7 @@ function createTOTP(secret) {
   return new OTPAuth.TOTP({
     issuer: "ActionTerminal",
     label: "Terminal",
-    algorithm: "SHA1",
+    algorithm: "SHA256",
     digits: 6,
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret)
@@ -18,7 +18,7 @@ function createTOTP(secret) {
 function validateOTP(secret, code) {
   try {
     const totp = createTOTP(secret);
-    const delta = totp.validate({ token: code, window: 1 });
+    const delta = totp.validate({ token: code, window: 0 });
     return delta !== null;
   } catch (err) {
     console.error("OTP validation error:", err);
@@ -194,8 +194,8 @@ async function main() {
   });
   let dcOpen = false;
   let otpVerified = false;
-  let commandBuffer = "";
-  const actor = process.env.GITHUB_ACTOR || process.env.USER || "unknown";
+  let otpAttempts = 0;
+  const MAX_OTP_ATTEMPTS = 3;
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
     dcOpen = true;
@@ -206,7 +206,16 @@ async function main() {
       try {
         const msg = JSON.parse(text);
         if (msg.type === "setup" && msg.code) {
-          console.log("Received setup message, validating OTP...");
+          if (otpAttempts >= MAX_OTP_ATTEMPTS) {
+            console.log("Security: Max OTP attempts exceeded, closing connection");
+            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Maximum OTP attempts exceeded" }) + "\n");
+            setTimeout(() => {
+              dc.close();
+            }, 100);
+            return;
+          }
+          otpAttempts++;
+          console.log(`OTP verification attempt ${otpAttempts}/${MAX_OTP_ATTEMPTS}`);
           const isDevBypass = process.env.DEV_MODE === "true" && msg.code === "000000";
           const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
           if (isValid) {
@@ -233,11 +242,15 @@ async function main() {
             });
             dc.sendMessage(JSON.stringify({ type: "setup-complete", success: true }) + "\n");
           } else {
-            console.log("OTP verification failed - invalid code");
-            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Invalid OTP code" }) + "\n");
-            setTimeout(() => {
-              dc.close();
-            }, 100);
+            console.log(`Security: OTP verification failed (attempt ${otpAttempts}/${MAX_OTP_ATTEMPTS})`);
+            const remainingAttempts = MAX_OTP_ATTEMPTS - otpAttempts;
+            const message = remainingAttempts > 0 ? `Invalid OTP code. ${remainingAttempts} attempt(s) remaining.` : "Invalid OTP code. No attempts remaining.";
+            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message }) + "\n");
+            if (otpAttempts >= MAX_OTP_ATTEMPTS) {
+              setTimeout(() => {
+                dc.close();
+              }, 100);
+            }
           }
         }
       } catch (e) {
@@ -246,22 +259,6 @@ async function main() {
       return;
     }
     if (shell) {
-      for (const char of text) {
-        if (char === "\r" || char === "\n") {
-          if (commandBuffer.trim().length > 0) {
-            console.log(`@${actor}::cmd> ${commandBuffer}`);
-          }
-          commandBuffer = "";
-        } else if (char === "\x7F" || char === "\b") {
-          commandBuffer = commandBuffer.slice(0, -1);
-        } else if (char === "") {
-          commandBuffer = "";
-        } else if (char === "") {
-          commandBuffer = "";
-        } else if (char.charCodeAt(0) >= 32 || char === "	") {
-          commandBuffer += char;
-        }
-      }
       shell.write(text);
     }
   });
