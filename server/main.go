@@ -703,11 +703,17 @@ func setAuthCookie(w http.ResponseWriter, username string) {
 	})
 	tokenStr, _ := token.SignedString(jwtSecret)
 
+	// Determine if we're in dev mode to set Secure flag appropriately
+	// In production, Secure flag ensures cookies are only sent over HTTPS
+	isDevMode := os.Getenv("DEV_MODE") == "true"
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    tokenStr,
 		Path:     "/",
-		HttpOnly: true,
+		HttpOnly: true,           // Prevents JavaScript access (XSS protection)
+		Secure:   !isDevMode,     // Only send over HTTPS in production (MITM protection)
+		SameSite: http.SameSiteStrictMode, // CSRF protection
 		MaxAge:   86400,
 	})
 }
