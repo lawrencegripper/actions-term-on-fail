@@ -108,7 +108,7 @@ var EventSource = class {
   }
 };
 async function main() {
-  console.log("Starting terminal client...");
+  console.log(`Starting terminal client, connecting to server: ${SERVER_URL}`);
   if (!OTP_SECRET && process.env.DEV_MODE !== "true") {
     console.error("OTP_SECRET is required for secure terminal access");
     process.exit(1);
