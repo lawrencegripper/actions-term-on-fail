@@ -41,6 +41,54 @@ type SSEClient struct {
 	Done     chan struct{}
 }
 
+// OTPAttemptTracker tracks OTP validation attempts per runID
+type OTPAttemptTracker struct {
+	attempts  map[string]int       // runID -> attempt count
+	firstAttempt map[string]time.Time // runID -> first attempt time
+	mu        sync.RWMutex
+}
+
+func newOTPAttemptTracker() *OTPAttemptTracker {
+	return &OTPAttemptTracker{
+		attempts:  make(map[string]int),
+		firstAttempt: make(map[string]time.Time),
+	}
+}
+
+// RecordAttempt records a WebRTC connection attempt for a runID
+// Returns false if rate limit is exceeded
+func (t *OTPAttemptTracker) RecordAttempt(runID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Security: Cleanup old entries (older than 10 minutes)
+	now := time.Now()
+	for rid, firstTime := range t.firstAttempt {
+		if now.Sub(firstTime) > 10*time.Minute {
+			delete(t.attempts, rid)
+			delete(t.firstAttempt, rid)
+		}
+	}
+
+	// Record first attempt time
+	if _, exists := t.firstAttempt[runID]; !exists {
+		t.firstAttempt[runID] = now
+	}
+
+	// Increment attempt count
+	t.attempts[runID]++
+	
+	// Security: Max 5 connection attempts per runID within 10 minutes
+	// This prevents attackers from creating multiple WebRTC connections
+	const maxAttempts = 5
+	if t.attempts[runID] > maxAttempts {
+		log.Printf("Security: Rate limit exceeded for runID %s (attempts: %d)", runID, t.attempts[runID])
+		return false
+	}
+
+	return true
+}
+
 var (
 	actorToSessions      = make(map[string]*Session) // actor -> session
 	runIdToSessions      = make(map[string]*Session) // runId -> session
@@ -52,6 +100,7 @@ var (
 	jwtSecret            []byte
 	oauthConfig          *oauth2.Config
 	jwkCache             *jwk.Cache
+	otpAttemptTracker    *OTPAttemptTracker
 )
 
 func init() {
@@ -83,6 +132,9 @@ func init() {
 	// Initialize JWKS cache for GitHub Actions OIDC
 	jwkCache = jwk.NewCache(context.Background())
 	jwkCache.Register(githubJWKSURL, jwk.WithMinRefreshInterval(15*time.Minute))
+	
+	// Initialize OTP attempt tracker for rate limiting
+	otpAttemptTracker = newOTPAttemptTracker()
 }
 
 func main() {
@@ -356,6 +408,13 @@ func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 	runID := r.URL.Query().Get("runId")
 	if runID == "" {
 		http.Error(w, "missing runId parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Security: Check rate limit for OTP connection attempts
+	if !otpAttemptTracker.RecordAttempt(runID) {
+		log.Printf("Security: Rate limit exceeded for runID %s by user %s", runID, username)
+		http.Error(w, "rate limit exceeded: too many connection attempts", http.StatusTooManyRequests)
 		return
 	}
 
