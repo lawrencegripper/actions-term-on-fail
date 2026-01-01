@@ -280,10 +280,60 @@
       color: #c9d1d9;
       border-color: #8b949e;
     }
+
+    /* SSE connection spinner */
+    .sse-indicator {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(13, 17, 23, 0.9);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #8b949e;
+      z-index: 1000;
+    }
+
+    .sse-indicator.connected {
+      display: flex;
+    }
+
+    .sse-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #30363d;
+      border-top-color: #3fb950;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .status-banner.new-session {
+      background: rgba(35, 134, 54, 0.15);
+      color: #3fb950;
+      cursor: pointer;
+    }
+
+    .status-banner.new-session:hover {
+      background: rgba(35, 134, 54, 0.25);
+    }
   </style>
 </head>
 
 <body class="color-bg-default">
+  <!-- SSE Connection Indicator -->
+  <div id="sse-indicator" class="sse-indicator">
+    <div class="sse-spinner"></div>
+    <span>Connected</span>
+  </div>
+
   <div id="login-view" class="flex-column flex-items-center flex-justify-center"
     style="min-height: 100vh; display: none;">
     <div class="Box color-shadow-large p-5" style="max-width: 360px; width: 90%; border-radius: 12px;">
@@ -775,6 +825,59 @@
     // Subscribe to session updates via SSE
     let sessionsEventSource = null;
 
+    function setSseIndicator(connected) {
+      const indicator = document.getElementById('sse-indicator');
+      if (connected) {
+        indicator.classList.add('connected');
+      } else {
+        indicator.classList.remove('connected');
+      }
+    }
+
+    let flashTimeout = null;
+
+    function showFlashNotification(session) {
+      const status = document.getElementById('status');
+      
+      // Store session info for click handler
+      status.dataset.runId = session.runId || '';
+      status.dataset.repo = session.repo || 'Unknown';
+      
+      status.className = 'status-banner new-session';
+      status.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0114.25 15H1.75A1.75 1.75 0 010 13.25Zm1.75-.25a.25.25 0 00-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V2.75a.25.25 0 00-.25-.25Z"/>
+        </svg>
+        New session: ${session.repo || 'Unknown'} #${session.runId || 'N/A'} — Click to connect
+      `;
+      status.style.display = 'flex';
+      
+      // Clear any existing timeout
+      if (flashTimeout) {
+        clearTimeout(flashTimeout);
+      }
+      
+      // Auto-hide after 5 seconds
+      flashTimeout = setTimeout(() => {
+        if (status.classList.contains('new-session')) {
+          status.style.display = 'none';
+        }
+      }, 5000);
+    }
+
+    // Status banner click handler for new session flash
+    document.getElementById('status').addEventListener('click', (e) => {
+      const status = e.currentTarget;
+      if (status.classList.contains('new-session')) {
+        const runId = status.dataset.runId;
+        const repo = status.dataset.repo;
+        status.style.display = 'none';
+        if (runId) {
+          window.promptOTPAndConnect(runId, repo);
+        }
+      }
+    });
+
     function subscribeToSessions() {
       if (sessionsEventSource) {
         sessionsEventSource.close();
@@ -784,6 +887,7 @@
 
       sessionsEventSource.onopen = () => {
         console.log('Sessions SSE connected');
+        setSseIndicator(true);
       };
 
       sessionsEventSource.onmessage = (event) => {
@@ -795,6 +899,9 @@
             // Reload the sessions list
             loadSessions();
             
+            // Show in-page flash notification
+            showFlashNotification(data.session);
+            
             // Show browser notification
             showNewSessionNotification(data.session);
           }
@@ -805,6 +912,7 @@
 
       sessionsEventSource.onerror = (err) => {
         console.error('Sessions SSE error:', err);
+        setSseIndicator(false);
         // Reconnect after a delay
         setTimeout(() => {
           if (document.getElementById('app').style.display !== 'none') {
@@ -861,10 +969,11 @@
 
     // Initialize
     async function initialize() {
+      // Request notification permission up front on page load
+      await requestNotificationPermission();
+      
       const isAuthenticated = await checkAuth();
       if (isAuthenticated) {
-        // Request notification permission
-        await requestNotificationPermission();
         // Subscribe to session updates via SSE
         subscribeToSessions();
       }
