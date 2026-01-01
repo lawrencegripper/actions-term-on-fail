@@ -5,6 +5,7 @@ import * as nodeDataChannel from "node-datachannel";
 var SERVER_URL = process.env.SERVER_URL || "http://localhost:7373";
 var SHELL = process.env.SHELL || "/bin/bash";
 var OTP_SECRET = process.env.OTP_SECRET || "";
+var CLOSE_DELAY_MS = 100;
 function createTOTP(secret) {
   return new OTPAuth.TOTP({
     issuer: "ActionTerminal",
@@ -211,7 +212,7 @@ async function main() {
             dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Maximum OTP attempts exceeded" }) + "\n");
             setTimeout(() => {
               dc.close();
-            }, 100);
+            }, CLOSE_DELAY_MS);
             return;
           }
           otpAttempts++;
@@ -249,7 +250,7 @@ async function main() {
             if (otpAttempts >= MAX_OTP_ATTEMPTS) {
               setTimeout(() => {
                 dc.close();
-              }, 100);
+              }, CLOSE_DELAY_MS);
             }
           }
         }

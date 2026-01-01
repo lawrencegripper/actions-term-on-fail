@@ -59,8 +59,10 @@ func TestOTPAttemptTracker_Cleanup(t *testing.T) {
 	tracker.RecordAttempt(runID)
 	
 	// Manually set the first attempt time to 11 minutes ago
+	// and force last cleanup to be more than 1 minute ago to trigger cleanup
 	tracker.mu.Lock()
 	tracker.firstAttempt[runID] = time.Now().Add(-11 * time.Minute)
+	tracker.lastCleanup = time.Now().Add(-2 * time.Minute)
 	tracker.mu.Unlock()
 
 	// Next attempt should trigger cleanup and reset the counter

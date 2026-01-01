@@ -6,6 +6,9 @@ const SERVER_URL = process.env.SERVER_URL || 'http://localhost:7373';
 const SHELL = process.env.SHELL || '/bin/bash';
 const OTP_SECRET = process.env.OTP_SECRET || '';
 
+// Security constants
+const CLOSE_DELAY_MS = 100; // Delay before closing connection to allow message delivery
+
 // Create TOTP instance for validation
 // Security: Uses SHA256 instead of deprecated SHA1 for stronger cryptographic security
 function createTOTP(secret: string): OTPAuth.TOTP {
@@ -279,7 +282,7 @@ async function main() {
             dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: false, message: 'Maximum OTP attempts exceeded' }) + '\n');
             setTimeout(() => {
               dc.close();
-            }, 100);
+            }, CLOSE_DELAY_MS);
             return;
           }
           
@@ -334,7 +337,7 @@ async function main() {
             if (otpAttempts >= MAX_OTP_ATTEMPTS) {
               setTimeout(() => {
                 dc.close();
-              }, 100);
+              }, CLOSE_DELAY_MS);
             }
           }
         }

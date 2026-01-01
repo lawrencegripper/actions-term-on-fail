@@ -43,15 +43,35 @@ type SSEClient struct {
 
 // OTPAttemptTracker tracks OTP validation attempts per runID
 type OTPAttemptTracker struct {
-	attempts  map[string]int       // runID -> attempt count
+	attempts     map[string]int       // runID -> attempt count
 	firstAttempt map[string]time.Time // runID -> first attempt time
-	mu        sync.RWMutex
+	mu           sync.RWMutex
+	lastCleanup  time.Time // Track last cleanup time
 }
 
 func newOTPAttemptTracker() *OTPAttemptTracker {
 	return &OTPAttemptTracker{
-		attempts:  make(map[string]int),
+		attempts:     make(map[string]int),
 		firstAttempt: make(map[string]time.Time),
+		lastCleanup:  time.Now(),
+	}
+}
+
+// cleanupOldEntries removes entries older than 10 minutes
+// This is called periodically to avoid performance issues with large maps
+func (t *OTPAttemptTracker) cleanupOldEntries() {
+	now := time.Now()
+	// Only cleanup if it's been at least 1 minute since last cleanup
+	if now.Sub(t.lastCleanup) < time.Minute {
+		return
+	}
+	
+	t.lastCleanup = now
+	for rid, firstTime := range t.firstAttempt {
+		if now.Sub(firstTime) > 10*time.Minute {
+			delete(t.attempts, rid)
+			delete(t.firstAttempt, rid)
+		}
 	}
 }
 
@@ -61,23 +81,17 @@ func (t *OTPAttemptTracker) RecordAttempt(runID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Security: Cleanup old entries (older than 10 minutes)
-	now := time.Now()
-	for rid, firstTime := range t.firstAttempt {
-		if now.Sub(firstTime) > 10*time.Minute {
-			delete(t.attempts, rid)
-			delete(t.firstAttempt, rid)
-		}
-	}
+	// Security: Periodic cleanup to prevent unbounded memory growth
+	t.cleanupOldEntries()
 
 	// Record first attempt time
 	if _, exists := t.firstAttempt[runID]; !exists {
-		t.firstAttempt[runID] = now
+		t.firstAttempt[runID] = time.Now()
 	}
 
 	// Increment attempt count
 	t.attempts[runID]++
-	
+
 	// Security: Max 5 connection attempts per runID within 10 minutes
 	// This prevents attackers from creating multiple WebRTC connections
 	const maxAttempts = 5
