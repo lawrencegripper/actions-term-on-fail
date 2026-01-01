@@ -310,6 +310,7 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
+		log.Printf("SSE not supported error")
 		http.Error(w, "SSE not supported", http.StatusInternalServerError)
 		return
 	}
@@ -323,15 +324,14 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	sseClientsMu.Lock()
 	// Runner client - keyed by actor
 	sseClients[actor] = client
-	log.Printf("Runner connected for actor %s", actor)
+	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(sseClients))
 	sseClientsMu.Unlock()
 
 	// Cleanup on disconnect
 	defer func() {
 		sseClientsMu.Lock()
 		delete(sseClients, actor)
-		log.Printf("Runner disconnected for actor %s", actor)
-
+		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(sseClients))
 		sseClientsMu.Unlock()
 		close(client.Done)
 	}()
@@ -340,16 +340,21 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	log.Printf("SSE: Starting event loop for actor %s", actor)
 	for {
 		select {
 		case <-r.Context().Done():
+			log.Printf("SSE: Context done for actor %s (reason: %v)", actor, r.Context().Err())
 			return
 		case <-ticker.C:
+			log.Printf("SSE: Sending keepalive ping to actor %s", actor)
 			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case msg := <-client.Messages:
+			log.Printf("SSE: Sending message to actor %s (size: %d bytes): %s", actor, len(msg), string(msg))
 			fmt.Fprintf(w, "data: %s\n\n", msg)
 			flusher.Flush()
+			log.Printf("SSE: Message sent and flushed to actor %s", actor)
 		}
 	}
 }
