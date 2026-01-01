@@ -227,11 +227,12 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo,
 		return "", "", "", fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 
-	// Parse and validate token
+	// Parse and validate token with clock skew tolerance
 	token, err := jwtx.Parse([]byte(tokenStr),
 		jwtx.WithKeySet(keySet),
 		jwtx.WithIssuer(githubOIDCIssuer),
 		jwtx.WithValidate(true),
+		jwtx.WithAcceptableSkew(2*time.Minute),
 	)
 	if err != nil {
 		return "", "", "", fmt.Errorf("token validation failed: %w", err)
