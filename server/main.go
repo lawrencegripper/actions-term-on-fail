@@ -40,16 +40,16 @@ type SSEClient struct {
 }
 
 var (
-	actorToSessions = make(map[string]*Session) // actor -> session
-	runIdToSessions = make(map[string]*Session) // runId -> session
-	sessionsMu      sync.RWMutex
-	runIdSseClient  = make(map[string]*SSEClient) // runId -> SSE client (runner)
-	sseClientsMu    sync.RWMutex
+	actorToSessions      = make(map[string]*Session) // actor -> session
+	runIdToSessions      = make(map[string]*Session) // runId -> session
+	sessionsMu           sync.RWMutex
+	runIdSseClient       = make(map[string]*SSEClient) // runId -> SSE client (runner)
+	sseClientsMu         sync.RWMutex
 	sessionSubscribers   = make(map[string][]*SSEClient) // actor -> list of browser SSE clients
 	sessionSubscribersMu sync.RWMutex
-	jwtSecret       []byte
-	oauthConfig     *oauth2.Config
-	jwkCache        *jwk.Cache
+	jwtSecret            []byte
+	oauthConfig          *oauth2.Config
+	jwkCache             *jwk.Cache
 )
 
 func init() {
@@ -144,9 +144,6 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	actorToSessions[sess.Actor] = sess
 	runIdToSessions[sess.RunID] = sess
 	sessionsMu.Unlock()
-
-	// Notify browser subscribers about new session
-	notifySessionSubscribers(sess)
 
 	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
 	w.WriteHeader(http.StatusOK)
@@ -295,6 +292,9 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	runIdSseClient[runId] = client
 	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(runIdSseClient))
 	sseClientsMu.Unlock()
+
+	// Notify browser subscribers about new session
+	notifySessionSubscribers(runIdToSessions[runId])
 
 	// Cleanup on disconnect
 	defer func() {
