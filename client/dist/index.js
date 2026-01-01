@@ -6,6 +6,7 @@ var SERVER_URL = process.env.SERVER_URL || "http://localhost:7373";
 var SHELL = process.env.SHELL || "/bin/bash";
 var OTP_SECRET = process.env.OTP_SECRET || "";
 var CLOSE_DELAY_MS = 100;
+var MAX_OTP_ATTEMPTS = 3;
 function createTOTP(secret) {
   return new OTPAuth.TOTP({
     issuer: "ActionTerminal",
@@ -196,7 +197,6 @@ async function main() {
   let dcOpen = false;
   let otpVerified = false;
   let otpAttempts = 0;
-  const MAX_OTP_ATTEMPTS = 3;
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
     dcOpen = true;

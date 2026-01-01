@@ -23,6 +23,10 @@ import (
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 const githubJWKSURL = "https://token.actions.githubusercontent.com/.well-known/jwks"
 
+// Security constants
+const maxOTPConnectionAttempts = 5 // Max connection attempts per runID within attemptWindow
+const attemptWindow = 10 * time.Minute // Time window for rate limiting
+
 var oidcExpectedAudience string
 
 // Session represents a registered action runner
@@ -57,7 +61,7 @@ func newOTPAttemptTracker() *OTPAttemptTracker {
 	}
 }
 
-// cleanupOldEntries removes entries older than 10 minutes
+// cleanupOldEntries removes entries older than attemptWindow
 // This is called periodically to avoid performance issues with large maps
 func (t *OTPAttemptTracker) cleanupOldEntries() {
 	now := time.Now()
@@ -68,7 +72,7 @@ func (t *OTPAttemptTracker) cleanupOldEntries() {
 	
 	t.lastCleanup = now
 	for rid, firstTime := range t.firstAttempt {
-		if now.Sub(firstTime) > 10*time.Minute {
+		if now.Sub(firstTime) > attemptWindow {
 			delete(t.attempts, rid)
 			delete(t.firstAttempt, rid)
 		}
@@ -92,10 +96,9 @@ func (t *OTPAttemptTracker) RecordAttempt(runID string) bool {
 	// Increment attempt count
 	t.attempts[runID]++
 
-	// Security: Max 5 connection attempts per runID within 10 minutes
+	// Security: Rate limit connection attempts per runID within time window
 	// This prevents attackers from creating multiple WebRTC connections
-	const maxAttempts = 5
-	if t.attempts[runID] > maxAttempts {
+	if t.attempts[runID] > maxOTPConnectionAttempts {
 		log.Printf("Security: Rate limit exceeded for runID %s (attempts: %d)", runID, t.attempts[runID])
 		return false
 	}

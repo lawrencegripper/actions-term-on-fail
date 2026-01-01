@@ -8,6 +8,7 @@ const OTP_SECRET = process.env.OTP_SECRET || '';
 
 // Security constants
 const CLOSE_DELAY_MS = 100; // Delay before closing connection to allow message delivery
+const MAX_OTP_ATTEMPTS = 3;  // Maximum OTP validation attempts per connection
 
 // Create TOTP instance for validation
 // Security: Uses SHA256 instead of deprecated SHA1 for stronger cryptographic security
@@ -259,7 +260,6 @@ async function main() {
   let dcOpen = false;
   let otpVerified = false;
   let otpAttempts = 0;
-  const MAX_OTP_ATTEMPTS = 3; // Security: Limit retry attempts to prevent brute force
 
   // The data channel we created will be used
   dc.onOpen(() => {
