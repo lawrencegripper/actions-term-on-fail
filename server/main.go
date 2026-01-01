@@ -81,13 +81,17 @@ func main() {
 	fs := http.FileServer(http.Dir("static"))
 	http.Handle("/", fs)
 
-	// API endpoints
-	http.HandleFunc("/api/sessions", handleSessions)
-	http.HandleFunc("/api/session/webrtc", handleSessionGetWebRTCDetails)
-	http.HandleFunc("/api/session/answer", handleSessionSendAnswer)
-	http.HandleFunc("/api/sessions/register", handleRegister)
-	http.HandleFunc("/api/sessions/subscribe", handleSessionsSubscribe)
-	http.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
+	// API endpoints - Client (authenticated via JWT cookie)
+	http.HandleFunc("/api/client/sessions", handleSessions)
+	http.HandleFunc("/api/client/sessions/subscribe", handleSessionsSubscribe)
+	http.HandleFunc("/api/client/webrtc", handleSessionGetWebRTCDetails)
+	http.HandleFunc("/api/client/answer", handleSessionSendAnswer)
+
+	// API endpoints - Runner (authenticated via OIDC token)
+	http.HandleFunc("/api/runner/register", handleRegister)
+	http.HandleFunc("/api/runner/signal", handleSignalSubscribe)
+
+	// Auth endpoints
 	http.HandleFunc("/auth/github", handleGitHubAuth)
 	http.HandleFunc("/auth/github/callback", handleGitHubCallback)
 

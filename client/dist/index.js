@@ -157,7 +157,7 @@ async function main() {
   console.log(`Gathered ICE candidates ${iceCandidates.length}`);
   try {
     const body = JSON.stringify({ ice: iceCandidates, offer });
-    const resp = await fetch(`${SERVER_URL}/api/sessions/register`, {
+    const resp = await fetch(`${SERVER_URL}/api/runner/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + oidcToken },
       body
@@ -172,7 +172,7 @@ async function main() {
   }
   let shell = null;
   console.log("Connecting to signaling channel...");
-  const eventSource = new EventSource(`${SERVER_URL}/api/signal/subscribe`, "Bearer " + oidcToken);
+  const eventSource = new EventSource(`${SERVER_URL}/api/runner/signal`, "Bearer " + oidcToken);
   eventSource.onopen = () => {
     console.log("SRE channel connected");
     console.log("Waiting for server to signal browser ICE Candidates. Press Ctrl+C to exit.");

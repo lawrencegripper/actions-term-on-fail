@@ -452,7 +452,7 @@
     // Check auth
     async function checkAuth() {
       try {
-        const resp = await fetch('/api/sessions');
+        const resp = await fetch('/api/client/sessions');
         if (resp.ok) {
           document.getElementById('login-view').style.display = 'none';
           document.getElementById('app').style.display = 'block';
@@ -465,7 +465,7 @@
     }
 
     async function loadSessions() {
-      const resp = await fetch('/api/sessions');
+      const resp = await fetch('/api/client/sessions');
       const sessions = await resp.json();
       const list = document.getElementById('sessions-list');
 
@@ -550,7 +550,7 @@
 
       try {
         // Fetch the runner's WebRTC offer and ICE candidates
-        const webrtcResp = await fetch(`/api/session/webrtc?runId=${runId}`);
+        const webrtcResp = await fetch(`/api/client/webrtc?runId=${runId}`);
         if (!webrtcResp.ok) {
           throw new Error(`Failed to get WebRTC details: ${webrtcResp.status}`);
         }
@@ -626,7 +626,7 @@
         console.log(`Gathered ${localIceCandidates.length} local ICE candidates`);
 
         // Send answer and ICE candidates to server
-        const answerResp = await fetch('/api/session/answer', {
+        const answerResp = await fetch('/api/client/answer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -886,7 +886,7 @@
         sessionsEventSource.close();
       }
 
-      sessionsEventSource = new EventSource('/api/sessions/subscribe');
+      sessionsEventSource = new EventSource('/api/client/sessions/subscribe');
 
       sessionsEventSource.onopen = () => {
         console.log('Sessions SSE connected');
