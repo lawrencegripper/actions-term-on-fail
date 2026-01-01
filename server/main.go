@@ -27,12 +27,15 @@ var oidcExpectedAudience string
 
 // Session represents a registered action runner
 type Session struct {
-	Actor     string          `json:"actor"`
-	Repo      string          `json:"repo,omitempty"`
-	RunID     string          `json:"runId,omitempty"`
-	CreatedAt time.Time       `json:"createdAt"`
-	ICE       json.RawMessage `json:"ice,omitempty"`
-	Offer     json.RawMessage `json:"offer,omitempty"`
+	Actor          string          `json:"actor"`
+	Owner          string          `json:"owner,omitempty"`
+	Repo           string          `json:"repo,omitempty"`
+	RunID          string          `json:"runId,omitempty"`
+	RunAttemptNum  string          `json:"runAttemptNum,omitempty"`
+	UniqueExecuteID string         `json:"uniqueExecuteId"` // Composite key for client use
+	CreatedAt      time.Time       `json:"createdAt"`
+	ICE            json.RawMessage `json:"ice,omitempty"`
+	Offer          json.RawMessage `json:"offer,omitempty"`
 }
 
 // SSE client for signaling
@@ -42,10 +45,9 @@ type SSEClient struct {
 }
 
 var (
-	actorToSessions      = make(map[string]*Session) // actor -> session
-	runIdToSessions      = make(map[string]*Session) // runId -> session
+	runIdToSessions      = make(map[string]*Session) // composite key (owner-repo-runId-attempt) -> session
 	sessionsMu           sync.RWMutex
-	runIdSseClient       = make(map[string]*SSEClient) // runId -> SSE client (runner)
+	runIdSseClient       = make(map[string]*SSEClient) // composite key -> SSE client (runner)
 	sseClientsMu         sync.RWMutex
 	sessionSubscribers   = make(map[string][]*SSEClient) // actor -> list of browser SSE clients
 	sessionSubscribersMu sync.RWMutex
@@ -83,6 +85,11 @@ func init() {
 	// Initialize JWKS cache for GitHub Actions OIDC
 	jwkCache = jwk.NewCache(context.Background())
 	jwkCache.Register(githubJWKSURL, jwk.WithMinRefreshInterval(15*time.Minute))
+}
+
+// makeCompositeKey creates a unique identifier from owner, repo, runId, and runAttemptNum
+func makeCompositeKey(owner, repo, runID, runAttemptNum string) string {
+	return fmt.Sprintf("%s/%s/%s/%s", owner, repo, runID, runAttemptNum)
 }
 
 func main() {
@@ -137,28 +144,31 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate OIDC token and extract claims
-	actor, repo, runID, err := validateGitHubOIDCToken(r.Context(), oidcToken)
+	actor, owner, repo, runID, runAttemptNum, err := validateGitHubOIDCToken(r.Context(), oidcToken)
 	if err != nil {
 		log.Printf("OIDC validation failed: %v", err)
 		http.Error(w, "invalid OIDC token: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 
+	compositeKey := makeCompositeKey(owner, repo, runID, runAttemptNum)
 	sess := &Session{
-		Actor:     actor,
-		Repo:      repo,
-		RunID:     runID,
-		CreatedAt: time.Now(),
-		ICE:       req.ICE,
-		Offer:     req.Offer,
+		Actor:          actor,
+		Owner:          owner,
+		Repo:           repo,
+		RunID:          runID,
+		RunAttemptNum:  runAttemptNum,
+		UniqueExecuteID: compositeKey,
+		CreatedAt:      time.Now(),
+		ICE:            req.ICE,
+		Offer:          req.Offer,
 	}
 
 	sessionsMu.Lock()
-	actorToSessions[sess.Actor] = sess
-	runIdToSessions[sess.RunID] = sess
+	runIdToSessions[compositeKey] = sess
 	sessionsMu.Unlock()
 
-	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
+	log.Printf("Registered run: actor %s (owner: %s, repo: %s, run: %s, attempt: %s)", actor, owner, repo, runID, runAttemptNum)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -173,37 +183,47 @@ func extractBearerToken(r *http.Request) string {
 }
 
 // validateGitHubOIDCToken validates a GitHub Actions OIDC token and returns claims
-func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo, runID string, err error) {
-	// Dev mode with mock token format: "dev:actor:repo:runId"
+func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, owner, repo, runID, runAttemptNum string, err error) {
+	// Dev mode with mock token format: "dev:actor:owner:repo:runId:runAttemptNum"
 	if len(tokenStr) >= 4 && tokenStr[:4] == "dev:" {
 		if os.Getenv("DEV_MODE") != "true" {
-			return "", "", "", fmt.Errorf("dev tokens only accepted in DEV_MODE")
+			return "", "", "", "", "", fmt.Errorf("dev tokens only accepted in DEV_MODE")
 		}
-		parts := splitN(tokenStr[4:], ":", 3)
+		parts := splitN(tokenStr[4:], ":", 5)
 		if len(parts) >= 1 {
 			actor = parts[0]
 		}
 		if len(parts) >= 2 {
-			repo = parts[1]
+			owner = parts[1]
 		}
 		if len(parts) >= 3 {
-			runID = parts[2]
+			repo = parts[2]
+		}
+		if len(parts) >= 4 {
+			runID = parts[3]
+		}
+		if len(parts) >= 5 {
+			runAttemptNum = parts[4]
 		}
 		if actor == "" {
-			return "", "", "", fmt.Errorf("dev token missing actor")
+			return "", "", "", "", "", fmt.Errorf("dev token missing actor")
+		}
+		// Default to "1" if runAttemptNum is not provided
+		if runAttemptNum == "" {
+			runAttemptNum = "1"
 		}
 		log.Printf("DEV MODE: Accepting mock token for actor=%s", actor)
-		return actor, repo, runID, nil
+		return actor, owner, repo, runID, runAttemptNum, nil
 	}
 
 	if tokenStr == "" {
-		return "", "", "", fmt.Errorf("empty token")
+		return "", "", "", "", "", fmt.Errorf("empty token")
 	}
 
 	// Fetch JWKS
 	keySet, err := jwkCache.Get(ctx, githubJWKSURL)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to fetch JWKS: %w", err)
+		return "", "", "", "", "", fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 
 	// Parse and validate token with clock skew tolerance
@@ -216,7 +236,7 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo,
 	}
 	token, err := jwtx.Parse([]byte(tokenStr), parseOpts...)
 	if err != nil {
-		return "", "", "", fmt.Errorf("token validation failed: %w", err)
+		return "", "", "", "", "", fmt.Errorf("token validation failed: %w", err)
 	}
 
 	// Extract claims
@@ -231,12 +251,23 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo,
 	if rid, ok := claims["run_id"].(string); ok {
 		runID = rid
 	}
-
-	if actor == "" {
-		return "", "", "", fmt.Errorf("actor claim missing from token")
+	if ra, ok := claims["run_attempt"].(string); ok {
+		runAttemptNum = ra
+	}
+	if ro, ok := claims["repository_owner"].(string); ok {
+		owner = ro
 	}
 
-	return actor, repo, runID, nil
+	if actor == "" {
+		return "", "", "", "", "", fmt.Errorf("actor claim missing from token")
+	}
+
+	// Default to "1" if runAttemptNum is not in the token
+	if runAttemptNum == "" {
+		runAttemptNum = "1"
+	}
+
+	return actor, owner, repo, runID, runAttemptNum, nil
 }
 
 func splitN(s, sep string, n int) []string {
@@ -267,12 +298,12 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	// Get OIDC token from Authorization header (for runner clients)
 	oidcToken := extractBearerToken(r)
 
-	var actor, runId string
+	var actor, owner, repo, runID, runAttemptNum string
 
 	if oidcToken != "" {
 		// Runner client - validate OIDC token
 		var err error
-		actor, _, runId, err = validateGitHubOIDCToken(r.Context(), oidcToken)
+		actor, owner, repo, runID, runAttemptNum, err = validateGitHubOIDCToken(r.Context(), oidcToken)
 		if err != nil {
 			log.Printf("SSE OIDC validation failed: %v", err)
 			http.Error(w, "invalid OIDC token: "+err.Error(), http.StatusUnauthorized)
@@ -282,6 +313,8 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Authorization header required", http.StatusBadRequest)
 		return
 	}
+
+	compositeKey := makeCompositeKey(owner, repo, runID, runAttemptNum)
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -303,18 +336,21 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	// Register client
 	sseClientsMu.Lock()
-	// Runner client - keyed by actor
-	runIdSseClient[runId] = client
+	// Runner client - keyed by composite key
+	runIdSseClient[compositeKey] = client
 	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(runIdSseClient))
 	sseClientsMu.Unlock()
 
 	// Notify browser subscribers about new session
-	notifySessionSubscribers(runIdToSessions[runId])
+	sessionsMu.RLock()
+	sess := runIdToSessions[compositeKey]
+	sessionsMu.RUnlock()
+	notifySessionSubscribers(sess)
 
 	// Cleanup on disconnect
 	defer func() {
 		sseClientsMu.Lock()
-		delete(runIdSseClient, runId)
+		delete(runIdSseClient, compositeKey)
 		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(runIdSseClient))
 		sseClientsMu.Unlock()
 		close(client.Done)
@@ -353,14 +389,18 @@ func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runID := r.URL.Query().Get("runId")
-	if runID == "" {
-		http.Error(w, "missing runId parameter", http.StatusBadRequest)
+	uniqueExecuteID := r.URL.Query().Get("uniqueExecuteId")
+	// Support legacy runId parameter for backwards compatibility
+	if uniqueExecuteID == "" {
+		uniqueExecuteID = r.URL.Query().Get("runId")
+	}
+	if uniqueExecuteID == "" {
+		http.Error(w, "missing uniqueExecuteId parameter", http.StatusBadRequest)
 		return
 	}
 
 	sessionsMu.RLock()
-	sess, ok := runIdToSessions[runID]
+	sess, ok := runIdToSessions[uniqueExecuteID]
 	sessionsMu.RUnlock()
 
 	if !ok {
@@ -376,9 +416,9 @@ func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 
 	// Return the ICE candidates and offer
 	resp := map[string]interface{}{
-		"ice":   sess.ICE,
-		"offer": sess.Offer,
-		"runId": sess.RunID,
+		"ice":            sess.ICE,
+		"offer":          sess.Offer,
+		"uniqueExecuteId": sess.UniqueExecuteID,
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -397,17 +437,24 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		RunID  string          `json:"runId"`
-		Answer json.RawMessage `json:"answer"`
-		ICE    json.RawMessage `json:"ice"`
+		UniqueExecuteID string          `json:"uniqueExecuteId"`
+		RunID           string          `json:"runId"` // Legacy support
+		Answer          json.RawMessage `json:"answer"`
+		ICE             json.RawMessage `json:"ice"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Use UniqueExecuteID if provided, otherwise fall back to RunID for backwards compatibility
+	uniqueExecuteID := req.UniqueExecuteID
+	if uniqueExecuteID == "" {
+		uniqueExecuteID = req.RunID
+	}
+
 	sessionsMu.RLock()
-	sess, ok := runIdToSessions[req.RunID]
+	sess, ok := runIdToSessions[uniqueExecuteID]
 	sessionsMu.RUnlock()
 
 	if !ok {
@@ -423,7 +470,7 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 
 	// Forward answer and ICE candidates to the runner via SSE
 	sseClientsMu.RLock()
-	client, ok := runIdSseClient[sess.RunID]
+	client, ok := runIdSseClient[sess.UniqueExecuteID]
 	sseClientsMu.RUnlock()
 
 	if !ok {
@@ -482,9 +529,9 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessionsMu.Lock()
 	now := time.Now()
 	var userSessions []*Session
-	for id, sess := range actorToSessions {
+	for key, sess := range runIdToSessions {
 		if now.Sub(sess.CreatedAt) > 30*time.Minute {
-			delete(actorToSessions, id)
+			delete(runIdToSessions, key)
 			continue
 		}
 		if sess.Actor == username {
@@ -497,7 +544,7 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sseClientsMu.RLock()
 	var activeSessions []*Session
 	for _, sess := range userSessions {
-		if _, ok := runIdSseClient[sess.RunID]; ok {
+		if _, ok := runIdSseClient[sess.UniqueExecuteID]; ok {
 			activeSessions = append(activeSessions, sess)
 		}
 	}

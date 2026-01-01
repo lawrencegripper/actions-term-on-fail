@@ -34,14 +34,14 @@ export async function initTerminal() {
 }
 
 // Connect to a session via WebRTC
-export async function connectToSession(runId, otpCode, sessionName, callbacks) {
+export async function connectToSession(uniqueExecuteId, otpCode, sessionName, callbacks) {
   const { onStatus, onConnected, onOtpFailed, onTerminalOpen, onTerminalData, onClose } = callbacks;
   
   onStatus?.('connecting', 'Connecting to runner...');
 
   try {
     // Fetch the runner's WebRTC offer and ICE candidates
-    const webrtcResp = await fetch(`/api/client/webrtc?runId=${runId}`);
+    const webrtcResp = await fetch(`/api/client/webrtc?uniqueExecuteId=${uniqueExecuteId}`);
     if (!webrtcResp.ok) {
       throw new Error(`Failed to get WebRTC details: ${webrtcResp.status}`);
     }
@@ -83,7 +83,7 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
     peerConnection.ondatachannel = (event) => {
       console.log('Received data channel:', event.channel.label);
       dataChannel = event.channel;
-      setupDataChannel(dataChannel, otpCode, runId, sessionName, callbacks);
+      setupDataChannel(dataChannel, otpCode, uniqueExecuteId, sessionName, callbacks);
     };
 
     // Set the runner's offer as remote description
@@ -119,7 +119,7 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        runId: runId,
+        uniqueExecuteId: uniqueExecuteId,
         answer: { type: 'answer', sdp: answer.sdp },
         ice: localIceCandidates,
       }),
@@ -137,7 +137,7 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
   }
 }
 
-function setupDataChannel(dc, otpCode, runId, sessionName, callbacks) {
+function setupDataChannel(dc, otpCode, uniqueExecuteId, sessionName, callbacks) {
   const { onStatus, onOtpFailed, onTerminalOpen, onTerminalData, onClose } = callbacks;
   
   dc.onopen = () => {
@@ -181,7 +181,7 @@ function setupDataChannel(dc, otpCode, runId, sessionName, callbacks) {
         } catch (err) {
           if (err.message.includes('OTP')) {
             onStatus?.('error', 'OTP verification failed');
-            onOtpFailed?.(runId, err.message);
+            onOtpFailed?.(uniqueExecuteId, err.message);
             cleanup();
           }
         }

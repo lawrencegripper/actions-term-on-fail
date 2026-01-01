@@ -36,8 +36,11 @@ async function getOIDCToken(): Promise<string> {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || 'devuser';
     const repo = process.env.GITHUB_REPOSITORY || 'dev/repo';
     const runId = process.env.GITHUB_RUN_ID || '0';
+    const runAttempt = process.env.GITHUB_RUN_ATTEMPT || '1';
+    // Extract owner from repo (format: owner/repo)
+    const owner = repo.split('/')[0];
     console.log(`DEV MODE: Using mock token for actor=${actor}`);
-    return `dev:${actor}:${repo}:${runId}`;
+    return `dev:${actor}:${owner}:${repo}:${runId}:${runAttempt}`;
   }
 
   const requestURL = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;

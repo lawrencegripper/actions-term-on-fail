@@ -30,8 +30,10 @@ async function getOIDCToken() {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || "devuser";
     const repo = process.env.GITHUB_REPOSITORY || "dev/repo";
     const runId = process.env.GITHUB_RUN_ID || "0";
+    const runAttempt = process.env.GITHUB_RUN_ATTEMPT || "1";
+    const owner = repo.split("/")[0];
     console.log(`DEV MODE: Using mock token for actor=${actor}`);
-    return `dev:${actor}:${repo}:${runId}`;
+    return `dev:${actor}:${owner}:${repo}:${runId}:${runAttempt}`;
   }
   const requestURL = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
   const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
@@ -194,8 +196,6 @@ async function main() {
   });
   let dcOpen = false;
   let otpVerified = false;
-  let commandBuffer = "";
-  const actor = process.env.GITHUB_ACTOR || process.env.USER || "unknown";
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
     dcOpen = true;
@@ -246,22 +246,6 @@ async function main() {
       return;
     }
     if (shell) {
-      for (const char of text) {
-        if (char === "\r" || char === "\n") {
-          if (commandBuffer.trim().length > 0) {
-            console.log(`@${actor}::cmd> ${commandBuffer}`);
-          }
-          commandBuffer = "";
-        } else if (char === "\x7F" || char === "\b") {
-          commandBuffer = commandBuffer.slice(0, -1);
-        } else if (char === "") {
-          commandBuffer = "";
-        } else if (char === "") {
-          commandBuffer = "";
-        } else if (char.charCodeAt(0) >= 32 || char === "	") {
-          commandBuffer += char;
-        }
-      }
       shell.write(text);
     }
   });

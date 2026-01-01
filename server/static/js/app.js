@@ -75,7 +75,7 @@ const App = {
     // OTP flow
     function promptOtp(session) {
       pendingSession.value = {
-        runId: session.runId,
+        uniqueExecuteId: session.uniqueExecuteId,
         repoName: session.repo || 'Terminal'
       };
       otpError.value = '';
@@ -91,17 +91,17 @@ const App = {
       if (!pendingSession.value) return;
       
       showOtpModal.value = false;
-      const { runId, repoName } = pendingSession.value;
+      const { uniqueExecuteId, repoName } = pendingSession.value;
       pendingSession.value = null;
       
-      await connectWithOtp(runId, code, repoName);
+      await connectWithOtp(uniqueExecuteId, code, repoName);
     }
 
-    async function connectWithOtp(runId, code, sessionName) {
+    async function connectWithOtp(uniqueExecuteId, code, sessionName) {
       const callbacks = {
         onStatus: (status, message) => showStatus(status, message),
-        onOtpFailed: (runId, message) => {
-          pendingSession.value = { runId, repoName: sessionName };
+        onOtpFailed: (uniqueExecuteId, message) => {
+          pendingSession.value = { uniqueExecuteId, repoName: sessionName };
           otpError.value = message;
           showOtpModal.value = true;
         },
@@ -119,7 +119,7 @@ const App = {
         onClose: () => terminal.writeCloseMessage()
       };
 
-      await terminal.connectToSession(runId, code, sessionName, callbacks);
+      await terminal.connectToSession(uniqueExecuteId, code, sessionName, callbacks);
     }
 
     function closeTerminal() {
