@@ -1,0 +1,338 @@
+/* Base Styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100vh;
+  caret-color: transparent !important;
+}
+
+/* Terminal Container */
+#terminal-container {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: #161b22;
+  z-index: 200;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-top: 1px solid #30363d;
+  display: flex;
+  flex-direction: column;
+}
+
+#terminal-container.open {
+  height: 66.67vh;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #21262d;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.terminal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c9d1d9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+.terminal-status {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+#terminal {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* App Container */
+#app {
+  display: none;
+  height: 100vh;
+  overflow-y: auto;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#app.terminal-open {
+  height: 33.33vh;
+  overflow-y: auto;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(1, 4, 9, 0.8);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+/* OTP Input */
+.otp-input {
+  letter-spacing: 8px;
+  text-align: center;
+  font-size: 24px !important;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+/* Session Items */
+.session-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #21262d;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.session-item:hover {
+  background-color: #161b22;
+}
+
+.session-item:last-child {
+  border-bottom: none;
+}
+
+.session-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.session-icon svg {
+  color: white;
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #c9d1d9;
+  margin-bottom: 2px;
+}
+
+.session-meta {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 10px;
+  background: rgba(35, 134, 54, 0.2);
+  color: #3fb950;
+  margin-left: 12px;
+}
+
+.session-arrow {
+  color: #8b949e;
+  margin-left: 8px;
+}
+
+/* Header */
+.header-bar {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #21262d;
+  background: #0d1117;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #c9d1d9;
+}
+
+.section-header {
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #010409;
+  border-bottom: 1px solid #21262d;
+}
+
+/* Empty State */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  color: #484f58;
+}
+
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #c9d1d9;
+  margin-bottom: 4px;
+}
+
+.empty-state-text {
+  font-size: 14px;
+  color: #8b949e;
+}
+
+/* Status Banners */
+.status-banner {
+  padding: 12px 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #21262d;
+}
+
+.status-banner.connecting {
+  background: rgba(187, 128, 9, 0.15);
+  color: #d29922;
+}
+
+.status-banner.connected {
+  background: rgba(35, 134, 54, 0.15);
+  color: #3fb950;
+}
+
+.status-banner.error {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.status-banner.notification-prompt {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+  cursor: pointer;
+}
+
+.status-banner.notification-prompt:hover {
+  background: rgba(56, 139, 253, 0.25);
+}
+
+.status-banner.new-session {
+  background: rgba(35, 134, 54, 0.15);
+  color: #3fb950;
+  cursor: pointer;
+}
+
+.status-banner.new-session:hover {
+  background: rgba(35, 134, 54, 0.25);
+}
+
+/* Buttons */
+.close-btn {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.close-btn:hover {
+  background: #30363d;
+  color: #c9d1d9;
+  border-color: #8b949e;
+}
+
+/* SSE Connection Indicator */
+.sse-indicator {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(13, 17, 23, 0.9);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #8b949e;
+  z-index: 1000;
+}
+
+.sse-indicator.connected {
+  display: flex;
+}
+
+.sse-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #30363d;
+  border-top-color: #3fb950;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
