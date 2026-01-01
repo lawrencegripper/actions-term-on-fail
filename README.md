@@ -44,6 +44,16 @@ The OTP verification happens **directly between the browser and the runner** ove
 - **Server cannot intercept**: The OTP secret is only known to the workflow (via GitHub Secrets) and the user. The server never sees the OTP code or secret.
 - **Server cannot inject commands**: All terminal I/O flows directly between browser and runner. The server only facilitates initial connection setup (ICE candidates exchange).
 
+### Cookie Security
+
+Authentication cookies are secured with multiple layers of protection:
+
+- **HttpOnly flag**: Prevents JavaScript access to cookies, protecting against XSS (Cross-Site Scripting) attacks
+- **Secure flag**: Ensures cookies are only transmitted over HTTPS in production, preventing MITM (Man-in-the-Middle) attacks
+- **SameSite=Strict**: Prevents CSRF (Cross-Site Request Forgery) attacks by ensuring cookies are only sent from same-site requests
+- **24-hour expiration**: Limits the window of opportunity if a cookie is compromised
+- **JWT signed tokens**: Cookie values are cryptographically signed to prevent tampering
+
 
 ### Components
 
