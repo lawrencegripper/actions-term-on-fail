@@ -1,6 +1,6 @@
 module github.com/lawrencegripper/action-term-on-fail/server
 
-go 1.21
+go 1.25
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
