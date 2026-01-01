@@ -251,10 +251,6 @@ async function main() {
   // Track if data channel is open
   let dcOpen = false;
   let otpVerified = false;
-  
-  // Buffer to track command input for logging
-  let commandBuffer = '';
-  const actor = process.env.GITHUB_ACTOR || process.env.USER || 'unknown';
 
   // The data channel we created will be used
   dc.onOpen(() => {
@@ -326,28 +322,6 @@ async function main() {
     
     // OTP verified - forward terminal data to PTY
     if (shell) {
-      // Track command input for logging
-      for (const char of text) {
-        if (char === '\r' || char === '\n') {
-          // Enter pressed - log the command if there's content
-          if (commandBuffer.trim().length > 0) {
-            console.log(`@${actor}::cmd> ${commandBuffer}`);
-          }
-          commandBuffer = '';
-        } else if (char === '\x7f' || char === '\b') {
-          // Backspace - remove last character from buffer
-          commandBuffer = commandBuffer.slice(0, -1);
-        } else if (char === '\x03') {
-          // Ctrl+C - clear buffer
-          commandBuffer = '';
-        } else if (char === '\x15') {
-          // Ctrl+U - clear line
-          commandBuffer = '';
-        } else if (char.charCodeAt(0) >= 32 || char === '\t') {
-          // Printable character or tab - add to buffer
-          commandBuffer += char;
-        }
-      }
       shell.write(text);
     }
   });
