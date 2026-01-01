@@ -261,6 +261,16 @@
       color: #f85149;
     }
 
+    .status-banner.notification-prompt {
+      background: rgba(56, 139, 253, 0.15);
+      color: #58a6ff;
+      cursor: pointer;
+    }
+
+    .status-banner.notification-prompt:hover {
+      background: rgba(56, 139, 253, 0.25);
+    }
+
     .close-btn {
       background: transparent;
       border: 1px solid #30363d;
@@ -944,6 +954,46 @@
       return false;
     }
 
+    // Show notification permission banner
+    function showNotificationPermissionBanner() {
+      if (!('Notification' in window)) {
+        return; // Browser doesn't support notifications
+      }
+
+      if (Notification.permission === 'granted' || Notification.permission === 'denied') {
+        return; // Already granted or denied
+      }
+
+      const status = document.getElementById('status');
+      status.className = 'status-banner notification-prompt';
+      status.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM8 1.5A3.5 3.5 0 0 0 4.5 5v2.947c0 .346-.102.683-.294.97l-1.703 2.556a.018.018 0 0 0-.003.01l.001.006c0 .002.002.004.004.006l.006.004.007.001h10.964l.007-.001.006-.004.004-.006.001-.007a.017.017 0 0 0-.003-.01l-1.703-2.554a1.745 1.745 0 0 1-.294-.97V5A3.5 3.5 0 0 0 8 1.5Z"/>
+        </svg>
+        Enable notifications to be alerted when a new session is available
+      `;
+      status.style.display = 'flex';
+      status.onclick = async () => {
+        const granted = await requestNotificationPermission();
+        if (granted) {
+          status.className = 'status-banner connected';
+          status.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+            </svg>
+            Notifications enabled!
+          `;
+          setTimeout(() => {
+            status.style.display = 'none';
+            status.onclick = null;
+          }, 2000);
+        } else {
+          status.style.display = 'none';
+          status.onclick = null;
+        }
+      };
+    }
+
     // Show notification for new session
     function showNewSessionNotification(session) {
       if (!('Notification' in window) || Notification.permission !== 'granted') {
@@ -972,11 +1022,10 @@
 
     // Initialize
     async function initialize() {
-      // Request notification permission up front on page load
-      await requestNotificationPermission();
-      
       const isAuthenticated = await checkAuth();
       if (isAuthenticated) {
+        // Show notification permission banner if not yet granted
+        showNotificationPermissionBanner();
         // Subscribe to session updates via SSE
         subscribeToSessions();
       }
