@@ -5,7 +5,7 @@ author: "lawrencegripper"
 inputs:
   server-url:
     description: "URL of the terminal server"
-    required: true
+    default: "https://actions-term.gripdev.xyz/"
   timeout:
     description: "How long to wait for connection (minutes)"
     required: false
