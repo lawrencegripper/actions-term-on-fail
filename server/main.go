@@ -45,6 +45,8 @@ var (
 	sessionsMu      sync.RWMutex
 	runIdSseClient  = make(map[string]*SSEClient) // runId -> SSE client (runner)
 	sseClientsMu    sync.RWMutex
+	sessionSubscribers   = make(map[string][]*SSEClient) // actor -> list of browser SSE clients
+	sessionSubscribersMu sync.RWMutex
 	jwtSecret       []byte
 	oauthConfig     *oauth2.Config
 	jwkCache        *jwk.Cache
@@ -84,6 +86,7 @@ func main() {
 	http.HandleFunc("/api/session/webrtc", handleSessionGetWebRTCDetails)
 	http.HandleFunc("/api/session/answer", handleSessionSendAnswer)
 	http.HandleFunc("/api/sessions/register", handleRegister)
+	http.HandleFunc("/api/sessions/subscribe", handleSessionsSubscribe)
 	http.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
 	http.HandleFunc("/auth/github", handleGitHubAuth)
 	http.HandleFunc("/auth/github/callback", handleGitHubCallback)
@@ -141,6 +144,9 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	actorToSessions[sess.Actor] = sess
 	runIdToSessions[sess.RunID] = sess
 	sessionsMu.Unlock()
+
+	// Notify browser subscribers about new session
+	notifySessionSubscribers(sess)
 
 	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
 	w.WriteHeader(http.StatusOK)
@@ -483,6 +489,104 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 	sseClientsMu.RUnlock()
 
 	json.NewEncoder(w).Encode(activeSessions)
+}
+
+// handleSessionsSubscribe - SSE endpoint for browser clients to receive session updates
+func handleSessionsSubscribe(w http.ResponseWriter, r *http.Request) {
+	// Get user from JWT cookie
+	username, err := usernameFromCookieOrError(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+
+	client := &SSEClient{
+		Messages: make(chan []byte, 100),
+		Done:     make(chan struct{}),
+	}
+
+	// Register client for this user
+	sessionSubscribersMu.Lock()
+	sessionSubscribers[username] = append(sessionSubscribers[username], client)
+	log.Printf("Sessions SSE: Browser connected for user %s (total subscribers: %d)", username, len(sessionSubscribers[username]))
+	sessionSubscribersMu.Unlock()
+
+	// Cleanup on disconnect
+	defer func() {
+		sessionSubscribersMu.Lock()
+		clients := sessionSubscribers[username]
+		for i, c := range clients {
+			if c == client {
+				sessionSubscribers[username] = append(clients[:i], clients[i+1:]...)
+				break
+			}
+		}
+		if len(sessionSubscribers[username]) == 0 {
+			delete(sessionSubscribers, username)
+		}
+		log.Printf("Sessions SSE: Browser disconnected for user %s", username)
+		sessionSubscribersMu.Unlock()
+		close(client.Done)
+	}()
+
+	// Send keepalive ping and messages
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	log.Printf("Sessions SSE: Starting event loop for user %s", username)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		case msg := <-client.Messages:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		}
+	}
+}
+
+// notifySessionSubscribers sends a new session notification to all browser subscribers for the actor
+func notifySessionSubscribers(sess *Session) {
+	sessionSubscribersMu.RLock()
+	clients := sessionSubscribers[sess.Actor]
+	sessionSubscribersMu.RUnlock()
+
+	if len(clients) == 0 {
+		return
+	}
+
+	msg, err := json.Marshal(map[string]interface{}{
+		"type":    "new-session",
+		"session": sess,
+	})
+	if err != nil {
+		log.Printf("Failed to marshal session notification: %v", err)
+		return
+	}
+
+	log.Printf("Notifying %d browser subscribers about new session for actor %s", len(clients), sess.Actor)
+	for _, client := range clients {
+		select {
+		case client.Messages <- msg:
+		default:
+			log.Printf("Failed to send session notification: channel full")
+		}
+	}
 }
 
 func usernameFromCookieOrError(r *http.Request) (string, error) {

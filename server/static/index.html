@@ -772,14 +772,105 @@
       document.getElementById('status').style.display = 'none';
     };
 
-    // Refresh sessions every 10s
-    setInterval(() => {
-      if (document.getElementById('app').style.display !== 'none') {
-        loadSessions();
-      }
-    }, 10000);
+    // Subscribe to session updates via SSE
+    let sessionsEventSource = null;
 
-    checkAuth();
+    function subscribeToSessions() {
+      if (sessionsEventSource) {
+        sessionsEventSource.close();
+      }
+
+      sessionsEventSource = new EventSource('/api/sessions/subscribe');
+
+      sessionsEventSource.onopen = () => {
+        console.log('Sessions SSE connected');
+      };
+
+      sessionsEventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Sessions SSE message:', data);
+
+          if (data.type === 'new-session') {
+            // Reload the sessions list
+            loadSessions();
+            
+            // Show browser notification
+            showNewSessionNotification(data.session);
+          }
+        } catch (e) {
+          console.error('Failed to parse SSE message:', e);
+        }
+      };
+
+      sessionsEventSource.onerror = (err) => {
+        console.error('Sessions SSE error:', err);
+        // Reconnect after a delay
+        setTimeout(() => {
+          if (document.getElementById('app').style.display !== 'none') {
+            subscribeToSessions();
+          }
+        }, 5000);
+      };
+    }
+
+    // Request notification permission
+    async function requestNotificationPermission() {
+      if (!('Notification' in window)) {
+        console.log('This browser does not support notifications');
+        return false;
+      }
+
+      if (Notification.permission === 'granted') {
+        return true;
+      }
+
+      if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        return permission === 'granted';
+      }
+
+      return false;
+    }
+
+    // Show notification for new session
+    function showNewSessionNotification(session) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') {
+        return;
+      }
+
+      const notification = new Notification('New Terminal Session', {
+        body: `${session.repo || 'Unknown Repo'} - Run #${session.runId || 'N/A'}`,
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%233fb950" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M6 8l3 3-3 3M11 14h4"/></svg>',
+        tag: `session-${session.runId}`,
+        requireInteraction: false,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+        // Optionally auto-connect
+        if (session.runId) {
+          window.promptOTPAndConnect(session.runId, session.repo || 'Unknown');
+        }
+      };
+
+      // Auto-close after 10 seconds
+      setTimeout(() => notification.close(), 10000);
+    }
+
+    // Initialize
+    async function initialize() {
+      const isAuthenticated = await checkAuth();
+      if (isAuthenticated) {
+        // Request notification permission
+        await requestNotificationPermission();
+        // Subscribe to session updates via SSE
+        subscribeToSessions();
+      }
+    }
+
+    initialize();
   </script>
 </body>
 
