@@ -127,8 +127,3 @@ The `id-token: write` permission is required for the action to authenticate with
 | `SERVER_URL` | Signaling server URL |
 | `OTP_SECRET` | Base32-encoded TOTP secret |
 | `DEV_MODE` | Accept mock OIDC tokens |
-
-
-## License
-
-MIT
