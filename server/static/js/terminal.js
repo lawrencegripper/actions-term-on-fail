@@ -3,7 +3,7 @@ import { init, Terminal, FitAddon } from '/vendor/ghostty/ghostty-web.js';
 
 // Terminal font settings
 const TERMINAL_FONT_SIZE = 12;
-const CHAR_WIDTH = TERMINAL_FONT_SIZE * 0.6;
+const CHAR_WIDTH = TERMINAL_FONT_SIZE * 0.8;
 const LINE_HEIGHT = TERMINAL_FONT_SIZE * 1.2;
 const TERMINAL_HEADER_HEIGHT = 41;
 
@@ -23,7 +23,7 @@ let dataChannel = null;
 
 // Calculate terminal dimensions based on pixel dimensions
 function calculateTerminalDimensions(width, height) {
-  const cols = Math.floor(width / CHAR_WIDTH * 2);
+  const cols = Math.floor(width / CHAR_WIDTH);
   const rows = Math.floor(height / LINE_HEIGHT);
   return { cols, rows };
 }
