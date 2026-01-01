@@ -156,12 +156,11 @@ func TestSetAuthCookieValueFormat(t *testing.T) {
 		t.Errorf("Cookie value doesn't appear to be a valid JWT format (expected 2 dots, got %d)", parts)
 	}
 
-	// Verify cookie value is not empty and has substantial length
-	// JWT format: base64(header).base64(payload).base64(signature)
-	// Minimum would be header (~36) + payload (~40) + signature (~43) + 2 dots = ~121 chars
-	// We use 100 as a conservative threshold to allow for minimal payloads
-	if len(cookie.Value) < 100 {
-		t.Errorf("Cookie value suspiciously short for a JWT token: %d characters (expected at least 100)", len(cookie.Value))
+	// Verify cookie value has reasonable length for a JWT token
+	// Actual JWT with minimal claims typically ranges from 100-150+ characters
+	const minJWTLength = 100
+	if len(cookie.Value) < minJWTLength {
+		t.Errorf("Cookie value suspiciously short for a JWT token: %d characters (expected at least %d)", len(cookie.Value), minJWTLength)
 	}
 }
 
@@ -216,15 +215,9 @@ func TestCookieSecurityAttributesCombination(t *testing.T) {
 		},
 	}
 
-	allPassed := true
 	for _, check := range securityChecks {
 		if !check.condition {
 			t.Errorf("SECURITY FAILURE [%s]: %s", check.name, check.message)
-			allPassed = false
 		}
-	}
-
-	if allPassed {
-		t.Log("All cookie security attributes properly configured")
 	}
 }
