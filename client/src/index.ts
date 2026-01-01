@@ -137,7 +137,7 @@ class EventSource {
 }
 
 async function main() {
-  console.log('Starting terminal client...');
+  console.log(`Starting terminal client, connecting to server: ${SERVER_URL}`);
 
   // Validate OTP secret
   if (!OTP_SECRET && process.env.DEV_MODE !== 'true') {

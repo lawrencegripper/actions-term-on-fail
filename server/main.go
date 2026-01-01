@@ -74,19 +74,56 @@ func init() {
 	jwkCache.Register(githubJWKSURL, jwk.WithMinRefreshInterval(15*time.Minute))
 }
 
+// loggingMiddleware logs all inbound HTTP requests
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap ResponseWriter to capture status code
+		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(lrw, r)
+
+		log.Printf("%s %s %s %d %v",
+			r.RemoteAddr,
+			r.Method,
+			r.URL.Path,
+			lrw.statusCode,
+			time.Since(start),
+		)
+	})
+}
+
+// loggingResponseWriter wraps http.ResponseWriter to capture the status code
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
 func main() {
+	// Create a new mux for routing
+	mux := http.NewServeMux()
+
 	// Serve static files
 	fs := http.FileServer(http.Dir("static"))
-	http.Handle("/", fs)
+	mux.Handle("/", fs)
 
 	// API endpoints
-	http.HandleFunc("/api/sessions", handleSessions)
-	http.HandleFunc("/api/session/webrtc", handleSessionGetWebRTCDetails)
-	http.HandleFunc("/api/session/answer", handleSessionSendAnswer)
-	http.HandleFunc("/api/sessions/register", handleRegister)
-	http.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
-	http.HandleFunc("/auth/github", handleGitHubAuth)
-	http.HandleFunc("/auth/github/callback", handleGitHubCallback)
+	mux.HandleFunc("/api/sessions", handleSessions)
+	mux.HandleFunc("/api/session/webrtc", handleSessionGetWebRTCDetails)
+	mux.HandleFunc("/api/session/answer", handleSessionSendAnswer)
+	mux.HandleFunc("/api/sessions/register", handleRegister)
+	mux.HandleFunc("/api/signal/subscribe", handleSignalSubscribe)
+	mux.HandleFunc("/auth/github", handleGitHubAuth)
+	mux.HandleFunc("/auth/github/callback", handleGitHubCallback)
+
+	// Wrap with logging middleware
+	handler := loggingMiddleware(mux)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -94,7 +131,7 @@ func main() {
 	}
 
 	log.Printf("Server starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
 
 // handleRegister - Action runner registers itself with OIDC token
