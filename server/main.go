@@ -265,7 +265,7 @@ func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 	runIdRunnerSseClientsMu.Unlock()
 
 	// Notify browser subscribers about new session
-	notifySessionSubscribers(runIdToSessions[runId])
+	notifyNewSession(runIdToSessions[runId])
 
 	// Cleanup on disconnect
 	defer func() {
@@ -275,8 +275,13 @@ func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 		runIdRunnerSseClientsMu.Unlock()
 
 		runIdToSessionsMu.Lock()
+		sess := runIdToSessions[runId]
 		delete(runIdToSessions, runId)
 		runIdToSessionsMu.Unlock()
+
+		if sess != nil {
+			notifySessionDeleted(sess)
+		}
 
 		close(client.Done)
 	}()
@@ -530,8 +535,8 @@ func handleClientSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// notifySessionSubscribers sends a new session notification to all browser subscribers for the actor
-func notifySessionSubscribers(sess *Session) {
+// notifyNewSession sends a new session notification to all browser subscribers for the actor
+func notifyNewSession(sess *Session) {
 	actorToBrowserSseClientsMu.RLock()
 	clients := actorToBrowserSseClients[sess.Actor]
 	actorToBrowserSseClientsMu.RUnlock()
@@ -555,6 +560,35 @@ func notifySessionSubscribers(sess *Session) {
 		case client.Messages <- msg:
 		default:
 			log.Printf("Failed to send session notification: channel full")
+		}
+	}
+}
+
+// notifySessionDeleted sends a session removal notification to all browser subscribers for the actor
+func notifySessionDeleted(sess *Session) {
+	actorToBrowserSseClientsMu.RLock()
+	clients := actorToBrowserSseClients[sess.Actor]
+	actorToBrowserSseClientsMu.RUnlock()
+
+	if len(clients) == 0 {
+		return
+	}
+
+	msg, err := json.Marshal(map[string]interface{}{
+		"type":  "removed-session",
+		"runId": sess.RunID,
+	})
+	if err != nil {
+		log.Printf("Failed to marshal session removal notification: %v", err)
+		return
+	}
+
+	log.Printf("Notifying %d browser subscribers about removed session for actor %s", len(clients), sess.Actor)
+	for _, client := range clients {
+		select {
+		case client.Messages <- msg:
+		default:
+			log.Printf("Failed to send session removal notification: channel full")
 		}
 	}
 }

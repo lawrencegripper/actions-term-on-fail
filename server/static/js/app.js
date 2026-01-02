@@ -148,6 +148,8 @@ const App = {
             loadSessions();
             showFlashNotification(data.session);
             notifications.showNewSessionNotification(data.session, promptOtp);
+          } else if (data.type === 'removed-session') {
+            loadSessions();
           }
         } catch (e) {
           console.error('Failed to parse SSE message:', e);
