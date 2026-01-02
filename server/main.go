@@ -265,7 +265,10 @@ func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 	runIdRunnerSseClientsMu.Unlock()
 
 	// Notify browser subscribers about new session
-	notifyNewSession(runIdToSessions[runId])
+	sess, ok := runIdToSessions[runId]
+	if ok {
+		notifyNewSession(sess)
+	}
 
 	// Cleanup on disconnect
 	defer func() {
@@ -275,8 +278,10 @@ func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 		runIdRunnerSseClientsMu.Unlock()
 
 		runIdToSessionsMu.Lock()
-		sess := runIdToSessions[runId]
-		delete(runIdToSessions, runId)
+		sess, ok := runIdToSessions[runId]
+		if ok {
+			delete(runIdToSessions, runId)
+		}
 		runIdToSessionsMu.Unlock()
 
 		if sess != nil {
@@ -538,8 +543,12 @@ func handleClientSubscribe(w http.ResponseWriter, r *http.Request) {
 // notifyNewSession sends a new session notification to all browser subscribers for the actor
 func notifyNewSession(sess *Session) {
 	actorToBrowserSseClientsMu.RLock()
-	clients := actorToBrowserSseClients[sess.Actor]
+	clients, ok := actorToBrowserSseClients[sess.Actor]
 	actorToBrowserSseClientsMu.RUnlock()
+
+	if !ok {
+		return
+	}
 
 	if len(clients) == 0 {
 		return
@@ -567,8 +576,12 @@ func notifyNewSession(sess *Session) {
 // notifySessionDeleted sends a session removal notification to all browser subscribers for the actor
 func notifySessionDeleted(sess *Session) {
 	actorToBrowserSseClientsMu.RLock()
-	clients := actorToBrowserSseClients[sess.Actor]
+	clients, ok := actorToBrowserSseClients[sess.Actor]
 	actorToBrowserSseClientsMu.RUnlock()
+
+	if !ok {
+		return
+	}
 
 	if len(clients) == 0 {
 		return
