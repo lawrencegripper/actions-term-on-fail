@@ -42,16 +42,15 @@ type SSEClient struct {
 }
 
 var (
-	actorToSessions      = make(map[string]*Session) // actor -> session
-	runIdToSessions      = make(map[string]*Session) // runId -> session
-	sessionsMu           sync.RWMutex
-	runIdSseClient       = make(map[string]*SSEClient) // runId -> SSE client (runner)
-	sseClientsMu         sync.RWMutex
-	sessionSubscribers   = make(map[string][]*SSEClient) // actor -> list of browser SSE clients
-	sessionSubscribersMu sync.RWMutex
-	jwtSecret            []byte
-	oauthConfig          *oauth2.Config
-	jwkCache             *jwk.Cache
+	runIdToSessions            = make(map[string]*Session) // runId -> session
+	runIdToSessionsMu          sync.RWMutex
+	runIdRunnerSseClient       = make(map[string]*SSEClient) // runId -> SSE client (runner)
+	runIdRunnerSseClientsMu    sync.RWMutex
+	actorToBrowserSseClients   = make(map[string][]*SSEClient) // actor -> list of browser SSE clients
+	actorToBrowserSseClientsMu sync.RWMutex
+	jwtSecret                  []byte
+	oauthConfig                *oauth2.Config
+	jwkCache                   *jwk.Cache
 )
 
 func init() {
@@ -91,14 +90,14 @@ func main() {
 	http.Handle("/", fs)
 
 	// API endpoints - Client (authenticated via JWT cookie)
-	http.HandleFunc("/api/client/sessions", handleSessions)
-	http.HandleFunc("/api/client/sessions/subscribe", handleSessionsSubscribe)
-	http.HandleFunc("/api/client/webrtc", handleSessionGetWebRTCDetails)
-	http.HandleFunc("/api/client/answer", handleSessionSendAnswer)
+	http.HandleFunc("/api/client/sessions", handleClientSessions)
+	http.HandleFunc("/api/client/sessions/subscribe", handleClientSubscribe)
+	http.HandleFunc("/api/client/webrtc", handleClientGetWebRTCDetails)
+	http.HandleFunc("/api/client/answer", handleClientSendWebRTCAnswer)
 
 	// API endpoints - Runner (authenticated via OIDC token)
-	http.HandleFunc("/api/runner/register", handleRegister)
-	http.HandleFunc("/api/runner/signal", handleSignalSubscribe)
+	http.HandleFunc("/api/runner/register", handleRunnerRegister)
+	http.HandleFunc("/api/runner/signal", handleRunnerSubscribe)
 
 	// Auth endpoints
 	http.HandleFunc("/auth/github", handleGitHubAuth)
@@ -113,8 +112,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-// handleRegister - Action runner registers itself with OIDC token
-func handleRegister(w http.ResponseWriter, r *http.Request) {
+// handleRunnerRegister - Action runner registers itself with OIDC token
+func handleRunnerRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
@@ -153,10 +152,9 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		Offer:     req.Offer,
 	}
 
-	sessionsMu.Lock()
-	actorToSessions[sess.Actor] = sess
+	runIdToSessionsMu.Lock()
 	runIdToSessions[sess.RunID] = sess
-	sessionsMu.Unlock()
+	runIdToSessionsMu.Unlock()
 
 	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
 	w.WriteHeader(http.StatusOK)
@@ -175,25 +173,8 @@ func extractBearerToken(r *http.Request) string {
 // validateGitHubOIDCToken validates a GitHub Actions OIDC token and returns claims
 func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo, runID string, err error) {
 	// Dev mode with mock token format: "dev:actor:repo:runId"
-	if len(tokenStr) >= 4 && tokenStr[:4] == "dev:" {
-		if os.Getenv("DEV_MODE") != "true" {
-			return "", "", "", fmt.Errorf("dev tokens only accepted in DEV_MODE")
-		}
-		parts := splitN(tokenStr[4:], ":", 3)
-		if len(parts) >= 1 {
-			actor = parts[0]
-		}
-		if len(parts) >= 2 {
-			repo = parts[1]
-		}
-		if len(parts) >= 3 {
-			runID = parts[2]
-		}
-		if actor == "" {
-			return "", "", "", fmt.Errorf("dev token missing actor")
-		}
-		log.Printf("DEV MODE: Accepting mock token for actor=%s", actor)
-		return actor, repo, runID, nil
+	if isDevModeToken(tokenStr) {
+		return validateDevModeToken(tokenStr, actor, repo, runID)
 	}
 
 	if tokenStr == "" {
@@ -239,31 +220,8 @@ func validateGitHubOIDCToken(ctx context.Context, tokenStr string) (actor, repo,
 	return actor, repo, runID, nil
 }
 
-func splitN(s, sep string, n int) []string {
-	result := make([]string, 0, n)
-	for i := 0; i < n-1; i++ {
-		idx := indexOf(s, sep)
-		if idx < 0 {
-			break
-		}
-		result = append(result, s[:idx])
-		s = s[idx+len(sep):]
-	}
-	result = append(result, s)
-	return result
-}
-
-func indexOf(s, sep string) int {
-	for i := 0; i <= len(s)-len(sep); i++ {
-		if s[i:i+len(sep)] == sep {
-			return i
-		}
-	}
-	return -1
-}
-
-// handleSignalSubscribe - SSE endpoint for receiving signaling messages
-func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
+// handleRunnerSubscribe - SSE endpoint for receiving signaling messages
+func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 	// Get OIDC token from Authorization header (for runner clients)
 	oidcToken := extractBearerToken(r)
 
@@ -301,22 +259,25 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 		Done:     make(chan struct{}),
 	}
 
-	// Register client
-	sseClientsMu.Lock()
-	// Runner client - keyed by actor
-	runIdSseClient[runId] = client
-	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(runIdSseClient))
-	sseClientsMu.Unlock()
+	runIdRunnerSseClientsMu.Lock()
+	runIdRunnerSseClient[runId] = client
+	log.Printf("SSE: Runner connected for actor %s (total clients: %d)", actor, len(runIdRunnerSseClient))
+	runIdRunnerSseClientsMu.Unlock()
 
 	// Notify browser subscribers about new session
 	notifySessionSubscribers(runIdToSessions[runId])
 
 	// Cleanup on disconnect
 	defer func() {
-		sseClientsMu.Lock()
-		delete(runIdSseClient, runId)
-		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(runIdSseClient))
-		sseClientsMu.Unlock()
+		runIdRunnerSseClientsMu.Lock()
+		delete(runIdRunnerSseClient, runId)
+		log.Printf("SSE: Runner disconnected for actor %s (remaining clients: %d)", actor, len(runIdRunnerSseClient))
+		runIdRunnerSseClientsMu.Unlock()
+
+		runIdToSessionsMu.Lock()
+		delete(runIdToSessions, runId)
+		runIdToSessionsMu.Unlock()
+
 		close(client.Done)
 	}()
 
@@ -343,7 +304,7 @@ func handleSignalSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
+func handleClientGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Get user from JWT cookie
@@ -359,9 +320,9 @@ func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionsMu.RLock()
+	runIdToSessionsMu.RLock()
 	sess, ok := runIdToSessions[runID]
-	sessionsMu.RUnlock()
+	runIdToSessionsMu.RUnlock()
 
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
@@ -383,7 +344,7 @@ func handleSessionGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
+func handleClientSendWebRTCAnswer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
@@ -406,9 +367,9 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionsMu.RLock()
+	runIdToSessionsMu.RLock()
 	sess, ok := runIdToSessions[req.RunID]
-	sessionsMu.RUnlock()
+	runIdToSessionsMu.RUnlock()
 
 	if !ok {
 		http.Error(w, "session not found", http.StatusNotFound)
@@ -422,9 +383,9 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward answer and ICE candidates to the runner via SSE
-	sseClientsMu.RLock()
-	client, ok := runIdSseClient[sess.RunID]
-	sseClientsMu.RUnlock()
+	runIdRunnerSseClientsMu.RLock()
+	client, ok := runIdRunnerSseClient[sess.RunID]
+	runIdRunnerSseClientsMu.RUnlock()
 
 	if !ok {
 		http.Error(w, "runner not connected", http.StatusServiceUnavailable)
@@ -467,8 +428,8 @@ func handleSessionSendAnswer(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// handleSessions - Get sessions for authenticated user
-func handleSessions(w http.ResponseWriter, r *http.Request) {
+// handleClientSessions - Get sessions for authenticated user
+func handleClientSessions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// Get user from JWT cookie
@@ -478,36 +439,30 @@ func handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clean old sessions and filter by user
-	sessionsMu.Lock()
-	now := time.Now()
+	runIdToSessionsMu.Lock()
 	var userSessions []*Session
-	for id, sess := range actorToSessions {
-		if now.Sub(sess.CreatedAt) > 30*time.Minute {
-			delete(actorToSessions, id)
-			continue
-		}
+	for _, sess := range runIdToSessions {
 		if sess.Actor == username {
 			userSessions = append(userSessions, sess)
 		}
 	}
-	sessionsMu.Unlock()
+	runIdToSessionsMu.Unlock()
 
 	// Check which sessions have runners connected (SSE)
-	sseClientsMu.RLock()
+	runIdRunnerSseClientsMu.RLock()
 	var activeSessions []*Session
 	for _, sess := range userSessions {
-		if _, ok := runIdSseClient[sess.RunID]; ok {
+		if _, ok := runIdRunnerSseClient[sess.RunID]; ok {
 			activeSessions = append(activeSessions, sess)
 		}
 	}
-	sseClientsMu.RUnlock()
+	runIdRunnerSseClientsMu.RUnlock()
 
 	json.NewEncoder(w).Encode(activeSessions)
 }
 
-// handleSessionsSubscribe - SSE endpoint for browser clients to receive session updates
-func handleSessionsSubscribe(w http.ResponseWriter, r *http.Request) {
+// handleClientSubscribe - SSE endpoint for browser clients to receive session updates
+func handleClientSubscribe(w http.ResponseWriter, r *http.Request) {
 	// Get user from JWT cookie
 	username, err := usernameFromCookieOrError(r)
 	if err != nil {
@@ -533,26 +488,26 @@ func handleSessionsSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register client for this user
-	sessionSubscribersMu.Lock()
-	sessionSubscribers[username] = append(sessionSubscribers[username], client)
-	log.Printf("Sessions SSE: Browser connected for user %s (total subscribers: %d)", username, len(sessionSubscribers[username]))
-	sessionSubscribersMu.Unlock()
+	actorToBrowserSseClientsMu.Lock()
+	actorToBrowserSseClients[username] = append(actorToBrowserSseClients[username], client)
+	log.Printf("Sessions SSE: Browser connected for user %s (total subscribers: %d)", username, len(actorToBrowserSseClients[username]))
+	actorToBrowserSseClientsMu.Unlock()
 
 	// Cleanup on disconnect
 	defer func() {
-		sessionSubscribersMu.Lock()
-		clients := sessionSubscribers[username]
+		actorToBrowserSseClientsMu.Lock()
+		clients := actorToBrowserSseClients[username]
 		for i, c := range clients {
 			if c == client {
-				sessionSubscribers[username] = append(clients[:i], clients[i+1:]...)
+				actorToBrowserSseClients[username] = append(clients[:i], clients[i+1:]...)
 				break
 			}
 		}
-		if len(sessionSubscribers[username]) == 0 {
-			delete(sessionSubscribers, username)
+		if len(actorToBrowserSseClients[username]) == 0 {
+			delete(actorToBrowserSseClients, username)
 		}
 		log.Printf("Sessions SSE: Browser disconnected for user %s", username)
-		sessionSubscribersMu.Unlock()
+		actorToBrowserSseClientsMu.Unlock()
 		close(client.Done)
 	}()
 
@@ -577,9 +532,9 @@ func handleSessionsSubscribe(w http.ResponseWriter, r *http.Request) {
 
 // notifySessionSubscribers sends a new session notification to all browser subscribers for the actor
 func notifySessionSubscribers(sess *Session) {
-	sessionSubscribersMu.RLock()
-	clients := sessionSubscribers[sess.Actor]
-	sessionSubscribersMu.RUnlock()
+	actorToBrowserSseClientsMu.RLock()
+	clients := actorToBrowserSseClients[sess.Actor]
+	actorToBrowserSseClientsMu.RUnlock()
 
 	if len(clients) == 0 {
 		return
@@ -604,6 +559,10 @@ func notifySessionSubscribers(sess *Session) {
 	}
 }
 
+func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
+	return jwtSecret, nil
+}
+
 func usernameFromCookieOrError(r *http.Request) (string, error) {
 	cookie, err := r.Cookie("token")
 	if err != nil {
@@ -611,9 +570,7 @@ func usernameFromCookieOrError(r *http.Request) (string, error) {
 	}
 
 	claims := &jwt.MapClaims{}
-	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(t *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	})
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, jwtKeyFunc, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil || !token.Valid {
 		return "", fmt.Errorf("invalid token: %w", err)
 	}
@@ -624,7 +581,7 @@ func usernameFromCookieOrError(r *http.Request) (string, error) {
 
 // handleGitHubAuth - Redirect to GitHub OAuth
 func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("DEV_MODE") == "true" {
+	if isDevMode {
 		handleDevAuth(w, r)
 		return
 	}
@@ -634,7 +591,7 @@ func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
 
 // handleGitHubCallback - OAuth callback
 func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("DEV_MODE") == "true" {
+	if isDevMode {
 		handleDevAuth(w, r)
 		return
 	}
@@ -708,6 +665,8 @@ func setAuthCookie(w http.ResponseWriter, username string) {
 		Value:    tokenStr,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   !isDevMode,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400,
 	})
 }
