@@ -125,10 +125,11 @@ export class AppHelper {
   }
 
   /**
-   * Login via dev mode authentication
+   * Login via dev mode authentication.
    */
   async login(username: string): Promise<void> {
     await this.page.goto(`/auth/github?user=${username}`);
+    
     // After login, should redirect to main page
     await expect(this.page).toHaveURL('/');
   }
@@ -142,10 +143,52 @@ export class AppHelper {
   }
 
   /**
+   * Wait for a specific number of sessions to appear
+   */
+  async waitForSessionCount(count: number): Promise<void> {
+    const sessionItems = this.page.locator('.session-item');
+    await expect(sessionItems).toHaveCount(count, { timeout: 30_000 });
+  }
+
+  /**
+   * Get the count of visible sessions
+   */
+  async getSessionCount(): Promise<number> {
+    return await this.page.locator('.session-item').count();
+  }
+
+  /**
+   * Get all session run IDs displayed in the session list
+   */
+  async getSessionRunIds(): Promise<string[]> {
+    const metaElements = this.page.locator('.session-meta');
+    const count = await metaElements.count();
+    const runIds: string[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      const text = await metaElements.nth(i).textContent() || '';
+      // Extract run ID from "Run #1234 • timestamp" format
+      const match = text.match(/Run #(\d+)/);
+      if (match) {
+        runIds.push(match[1]);
+      }
+    }
+    
+    return runIds;
+  }
+
+  /**
    * Click on the first available session
    */
   async selectFirstSession(): Promise<void> {
     await this.page.locator('.session-item').first().click();
+  }
+
+  /**
+   * Select a session by index (0-based)
+   */
+  async selectSessionByIndex(index: number): Promise<void> {
+    await this.page.locator('.session-item').nth(index).click();
   }
 
   /**

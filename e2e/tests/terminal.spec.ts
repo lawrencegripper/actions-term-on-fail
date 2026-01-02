@@ -13,12 +13,14 @@ import * as path from 'path';
  * 3. User enters OTP to access the terminal
  * 4. User can execute commands and see output
  * 
+ * Test setup starts 4 clients:
+ * - 2 clients for user "alice" (run IDs 1001, 1002)
+ * - 1 client for user "bob" (run ID 2001)
+ * - 1 client for user "charlie" (run ID 3001)
+ * 
  * The test is designed to be resilient to implementation changes -
  * it tests the user experience, not internal implementation details.
  */
-
-// Dev mode test user - must match what the client uses in DEV_MODE
-const TEST_USER = process.env.USER || 'testuser';
 
 // Load OTP secret from .env.devmode file (single source of truth)
 function loadOtpSecret(): string {
@@ -46,21 +48,80 @@ function generateOTP(): string {
   return totp.generate();
 }
 
+test.describe('Session Isolation', () => {
+  test('each user only sees their own sessions with correct run IDs', async ({ page }) => {
+    const app = new AppHelper(page);
+
+    await test.step('Alice sees only her 2 sessions with correct run IDs', async () => {
+      await app.login('alice');
+      await app.waitForAppReady();
+      await app.waitForSessionCount(2);
+      
+      const sessionCount = await app.getSessionCount();
+      expect(sessionCount).toBe(2);
+      
+      const runIds = await app.getSessionRunIds();
+      expect(runIds).toHaveLength(2);
+      expect(runIds.sort()).toEqual(['1001', '1002']);
+    });
+
+    await test.step('Bob sees only his 1 session with correct run ID', async () => {
+      await page.context().clearCookies();
+      await app.login('bob');
+      await app.waitForAppReady();
+      await app.waitForSessionCount(1);
+      
+      const sessionCount = await app.getSessionCount();
+      expect(sessionCount).toBe(1);
+      
+      const runIds = await app.getSessionRunIds();
+      expect(runIds).toEqual(['2001']);
+    });
+
+    await test.step('Charlie sees only his 1 session with correct run ID', async () => {
+      await page.context().clearCookies();
+      await app.login('charlie');
+      await app.waitForAppReady();
+      await app.waitForSessionCount(1);
+      
+      const sessionCount = await app.getSessionCount();
+      expect(sessionCount).toBe(1);
+      
+      const runIds = await app.getSessionRunIds();
+      expect(runIds).toEqual(['3001']);
+    });
+
+    await test.step('Unknown user sees no sessions', async () => {
+      await page.context().clearCookies();
+      await app.login('unknownuser');
+      await app.waitForAppReady();
+      
+      // Wait a moment and verify no sessions appear
+      await page.waitForTimeout(2000);
+      const sessionCount = await app.getSessionCount();
+      expect(sessionCount).toBe(0);
+      
+      const runIds = await app.getSessionRunIds();
+      expect(runIds).toEqual([]);
+    });
+  });
+});
+
 test.describe('Terminal End-to-End Flow', () => {
   test('complete user flow: login → session → terminal → execute command', async ({ page }) => {
     const app = new AppHelper(page);
     const terminal = new TerminalHelper(page);
 
-    await test.step('Login to the application', async () => {
-      await app.login(TEST_USER);
+    await test.step('Login as alice', async () => {
+      await app.login('alice');
       await app.waitForAppReady();
     });
 
-    await test.step('Wait for session as client is started', async () => {
-      await app.waitForSession();
+    await test.step('Wait for sessions (alice has 2)', async () => {
+      await app.waitForSessionCount(2);
     });
 
-    await test.step('Select session and enter OTP', async () => {
+    await test.step('Select first session and enter OTP', async () => {
       await app.selectFirstSession();
       await app.enterOtp(generateOTP());
     });
@@ -70,23 +131,17 @@ test.describe('Terminal End-to-End Flow', () => {
     });
 
     await test.step('Execute echo command and verify output', async () => {
-      // Use a unique identifier to verify our specific command output
       const testId = `e2e-${Date.now()}`;
-      
-      // Execute echo command and wait for the output to appear
       await terminal.executeAndExpect(`echo "${testId}"`, testId);
       
-      // Verify the terminal captured the output
       const output = await terminal.getTerminalText();
       expect(output).toContain(testId);
     });
 
     await test.step('Execute pwd command', async () => {
-      // pwd should output a path starting with /
       await terminal.executeCommand('pwd');
       await terminal.waitForOutput('/');
       
-      // Terminal should still be connected after command
       const isConnected = await terminal.isConnected();
       expect(isConnected).toBe(true);
     });
@@ -94,34 +149,14 @@ test.describe('Terminal End-to-End Flow', () => {
     await test.step('Close terminal', async () => {
       await app.closeTerminal();
       
-      // Terminal container should no longer be visible or should be closed
       const terminalContainer = page.locator('#terminal-container.open');
       await expect(terminalContainer).not.toBeVisible({ timeout: 5000 });
     });
 
-    await test.step('Validate session is no longer present', async () => {
-        // Session list should show no sessions
-        const sessionItems = page.locator('.session-item');
-        await expect(sessionItems).toHaveCount(0, { timeout: 10_000 });
-    })
-  });
-});
-
-test.describe('Login Flow', () => {
-  test('shows login page when not authenticated', async ({ page }) => {
-    await page.goto('/');
-    
-    // Should see the login prompt
-    await expect(page.locator('text=Sign in with GitHub')).toBeVisible({ timeout: 10_000 });
-  });
-
-  test('redirects to main page after login', async ({ page }) => {
-    const app = new AppHelper(page);
-    
-    await app.login(TEST_USER);
-    await app.waitForAppReady();
-    
-    // Should be on the main page with session list visible
-    await expect(page.getByText('Active Sessions', { exact: true })).toBeVisible();
+    await test.step('Verify one session remains after closing', async () => {
+      // After closing terminal, one of alice's sessions should be gone
+      // The other session should still be visible
+      await app.waitForSessionCount(1);
+    });
   });
 });

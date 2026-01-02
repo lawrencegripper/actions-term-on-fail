@@ -55,16 +55,22 @@ clean:
 fmt:
 	cd server && go fmt ./...
 
-# Start services for e2e tests (server + client in background)
+# Start services for e2e tests (server + 4 clients with different actors)
 run-e2e-services: build
 	@echo "Starting server for e2e tests..."
 	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
 	@cd server && DEV_MODE=true go run . &
 	@sleep 2
-	@echo "Starting client for e2e tests..."
-	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start &
-	@sleep 3
-	@echo "E2E services started"
+	@echo "Starting 4 clients for e2e tests (2 for alice, 1 for bob, 1 for charlie)..."
+	@cd client && DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1001 OTP_SECRET=$(OTP_SECRET) npm start &
+	@sleep 1
+	@cd client && DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1002 OTP_SECRET=$(OTP_SECRET) npm start &
+	@sleep 1
+	@cd client && DEV_MODE=true GITHUB_ACTOR=bob GITHUB_RUN_ID=2001 OTP_SECRET=$(OTP_SECRET) npm start &
+	@sleep 1
+	@cd client && DEV_MODE=true GITHUB_ACTOR=charlie GITHUB_RUN_ID=3001 OTP_SECRET=$(OTP_SECRET) npm start &
+	@sleep 5
+	@echo "E2E services started (4 clients)"
 
 # Stop e2e test services
 stop-e2e-services:
