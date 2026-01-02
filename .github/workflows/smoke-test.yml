@@ -33,7 +33,7 @@ jobs:
         uses: ./
         with:
           otp-secret: ${{ secrets.OTP_SECRET }}
-          timeout: "120"
+          timeout: "8"
 
       - name: Intentional failure to trigger action
         run: |
