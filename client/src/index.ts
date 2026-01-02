@@ -1,6 +1,7 @@
 import * as pty from 'node-pty';
 import * as OTPAuth from 'otpauth';
 import * as nodeDataChannel from 'node-datachannel';
+import { randomInt } from 'crypto';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:7373';
 const SHELL = process.env.SHELL || '/bin/bash';
@@ -35,7 +36,7 @@ async function getOIDCToken(): Promise<string> {
   if (process.env.DEV_MODE === 'true') {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || 'devuser';
     const repo = process.env.GITHUB_REPOSITORY || 'dev/repo';
-    const runId = process.env.GITHUB_RUN_ID || '0';
+    const runId = process.env.GITHUB_RUN_ID || randomInt(1000, 9999).toString();
     console.log(`DEV MODE: Using mock token for actor=${actor}`);
     return `dev:${actor}:${repo}:${runId}`;
   }
@@ -302,6 +303,8 @@ async function main() {
                 }
               }
             });
+
+            shell.write('echo "Terminal session started. Type commands below."\r');
             
             // Send success response
             dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: true }) + '\n');

@@ -38,6 +38,7 @@ run-devmode: build
 	@echo "Login at: http://localhost:7373/auth/github?user=$(USER)"
 	@echo ""
 	@echo "Starting client..."
+	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start &
 	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start
 
 # Stop dev mode services

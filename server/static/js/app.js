@@ -74,6 +74,9 @@ const App = {
 
     // OTP flow
     function promptOtp(session) {
+      if (terminalOpen.value) {
+        closeTerminal();
+      }
       pendingSession.value = {
         runId: session.runId,
         repoName: session.repo || 'Terminal'
