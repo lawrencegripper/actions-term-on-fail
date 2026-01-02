@@ -1,6 +1,9 @@
 // Terminal module - handles WebRTC connection and terminal rendering
 import { init, Terminal, FitAddon } from '/vendor/ghostty/ghostty-web.js';
 
+// Dev mode detection - enables test output capture
+const IS_DEV_MODE = window.location.hostname === 'localhost' && window.location.port === '7373';
+
 // Terminal font settings
 const TERMINAL_FONT_SIZE = 12;
 const CHAR_WIDTH = TERMINAL_FONT_SIZE * 0.8;
@@ -251,11 +254,38 @@ export function openTerminal(terminalElement, initialData, sessionName, onInput)
   });
 }
 
+// Append terminal output to hidden DOM element for e2e testing (dev mode only)
+function appendTestOutput(data) {
+  if (!IS_DEV_MODE) return;
+  
+  let container = document.getElementById('e2e-terminal-output');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'e2e-terminal-output';
+    container.style.display = 'none';
+    container.setAttribute('aria-hidden', 'true');
+    container.setAttribute('data-testid', 'terminal-output');
+    document.body.appendChild(container);
+  }
+  
+  // Append each chunk as a span element for easy inspection
+  const chunk = document.createElement('span');
+  chunk.className = 'terminal-output-chunk';
+  chunk.textContent = data;
+  container.appendChild(chunk);
+  
+  // Also update a data attribute with full text for easy access
+  const currentText = container.getAttribute('data-full-output') || '';
+  container.setAttribute('data-full-output', currentText + data);
+}
+
 // Write data to terminal
 export function writeToTerminal(data) {
   if (term) {
     term.write(data);
   }
+  // Capture output for e2e testing in dev mode
+  appendTestOutput(data);
 }
 
 // Close terminal connection message
@@ -285,6 +315,15 @@ export function closeTerminal() {
     term = null;
   }
   fitAddon = null;
+  
+  // Clear test output container in dev mode
+  if (IS_DEV_MODE) {
+    const container = document.getElementById('e2e-terminal-output');
+    if (container) {
+      container.innerHTML = '';
+      container.setAttribute('data-full-output', '');
+    }
+  }
 }
 
 // Handle window resize

@@ -1,4 +1,8 @@
-.PHONY: all build build-server build-client run-server run-client run-devmode stop-devmode clean fmt
+.PHONY: all build build-server build-client run-server run-client run-devmode stop-devmode clean fmt test-e2e run-e2e-services stop-e2e-services
+
+# Include dev mode environment variables
+include .env.devmode
+export
 
 # Default target
 all: build
@@ -16,7 +20,7 @@ build-client:
 
 # Run server locally (dev mode)
 run-server:
-	cd server && DEV_USER=$(USER) go run .
+	cd server && go run .
 
 # Run client locally
 run-client:
@@ -34,7 +38,7 @@ run-devmode: build
 	@echo "Login at: http://localhost:7373/auth/github?user=$(USER)"
 	@echo ""
 	@echo "Starting client..."
-	@cd client && DEV_MODE=true OTP_SECRET=JBSWY3DPEHPK3PXP npm start
+	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start
 
 # Stop dev mode services
 stop-devmode:
@@ -46,9 +50,33 @@ clean:
 	rm -f server/server
 	rm -rf client/dist client/node_modules
 	rm -rf dist node_modules
-	docker compose down -v --rmi local 2>/dev/null || true
 
 # Format code
 fmt:
 	cd server && go fmt ./...
-	cd client && npm run format 2>/dev/null || true
+
+# Start services for e2e tests (server + client in background)
+run-e2e-services: build
+	@echo "Starting server for e2e tests..."
+	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
+	@cd server && DEV_MODE=true go run . &
+	@sleep 2
+	@echo "Starting client for e2e tests..."
+	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start &
+	@sleep 3
+	@echo "E2E services started"
+
+# Stop e2e test services
+stop-e2e-services:
+	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
+	@pkill -f "npm start" 2>/dev/null || true
+	@echo "E2E services stopped"
+
+# Run e2e tests (starts services, runs tests, stops services)
+test-e2e: run-e2e-services
+	@echo "Installing e2e dependencies..."
+	@cd e2e && npm install
+	@cd e2e && npx playwright install chromium
+	@echo "Running e2e tests..."
+	@cd e2e && npm test || (cd .. && make stop-e2e-services && exit 1)
+	@make stop-e2e-services
