@@ -188,7 +188,7 @@ async function main() {
   });
 
   // Wait for ICE candidates to be gathered
-  await new Promise(resolve => setTimeout(resolve, 10000));
+  await new Promise(resolve => setTimeout(resolve, 15000));
 
   if (iceCandidates.length === 0) {
     console.error('No ICE candidates gathered after 10 seconds');
