@@ -9,7 +9,9 @@ These tests validate the full development-mode server functionality using Playwr
 1. **Session handling**: Sessions are created, managed, and terminated correctly
 2. **Authentication**: Dev mode authentication flow works properly  
 3. **API endpoints**: All server API endpoints respond correctly
-4. **Security**: Session isolation and access control are enforced
+4. **UI rendering**: Complete Vue.js UI renders and functions correctly
+5. **User interactions**: OTP modal, terminal panel, and full user flows
+6. **Security**: Session isolation and access control are enforced
 
 ## Running the Tests
 
@@ -42,6 +44,7 @@ npm run test:debug
 ## Test Structure
 
 - **`api.spec.ts`**: API integration tests that validate server endpoints, authentication, session management, and WebRTC signaling
+- **`ui.spec.ts`**: Full UI rendering tests that validate Vue.js application, login page, sessions list, OTP modal, terminal panel, and complete user flows
 
 ## How It Works
 
@@ -57,6 +60,7 @@ The tests use Playwright's `webServer` feature to automatically start the develo
 
 The current test suite covers:
 
+### API Tests (api.spec.ts)
 - ✅ Static file serving
 - ✅ Dev mode authentication
 - ✅ Session API endpoints
@@ -66,11 +70,22 @@ The current test suite covers:
 - ✅ Access control and authorization
 - ✅ ICE candidate exchange
 
+### UI Tests (ui.spec.ts)
+- ✅ Vue.js application rendering
+- ✅ Login page UI and interactions
+- ✅ Authenticated UI with sessions list
+- ✅ Empty state display
+- ✅ SSE connection indicator
+- ✅ Session item rendering and clicks
+- ✅ OTP modal display and interactions
+- ✅ OTP validation (valid/invalid codes)
+- ✅ Terminal panel opening and closing
+- ✅ Session isolation in UI
+- ✅ Complete user flows from login to terminal
+
 ## Limitations
 
-Due to sandboxed environment restrictions, full UI rendering tests are limited because:
-- External CDN resources (Vue.js, Primer CSS) may be blocked
-- Tests focus on API functionality rather than UI interactions
+Tests run sequentially (`workers: 1`) because they share a single server instance and session state. This ensures test isolation but limits parallel execution speed.
 
 ## Adding New Tests
 

@@ -3,15 +3,14 @@ import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 
 /**
- * Integration tests for the development-mode server.
+ * API integration tests for the development-mode server.
  * 
- * These tests validate the backend functionality including:
+ * These tests validate the backend API functionality including:
  * 1. Session handling: Sessions are created, managed, and terminated
  * 2. Authentication: Dev mode authentication works
  * 3. API endpoints: All API endpoints respond correctly
  * 
- * Note: Full UI tests are limited due to CDN blocking in sandboxed environments.
- * The UI uses external CDN resources (Vue.js, Primer CSS) which may not be accessible.
+ * For full UI rendering tests, see ui.spec.ts
  */
 
 const DEV_USER = 'testuser';
