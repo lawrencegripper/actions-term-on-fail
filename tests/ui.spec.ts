@@ -69,13 +69,23 @@ function stopRunner(runner: ChildProcess): Promise<void> {
       resolve();
       return;
     }
-    runner.on('exit', () => resolve());
+    
+    let resolved = false;
+    const safeResolve = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+    
+    runner.on('exit', safeResolve);
     runner.kill('SIGTERM');
+    
     setTimeout(() => {
       if (!runner.killed) {
         runner.kill('SIGKILL');
       }
-      resolve();
+      safeResolve();
     }, 5000);
   });
 }
