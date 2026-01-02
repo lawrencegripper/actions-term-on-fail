@@ -85,4 +85,4 @@ test-e2e: run-e2e-services
 	@cd e2e && npx playwright install chromium
 	@echo "Running e2e tests..."
 	@cd e2e && npm test || (cd .. && make stop-e2e-services && exit 1)
-	@make stop-e2e-services
+	@make stop-e2e-services || true
