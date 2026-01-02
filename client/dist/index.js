@@ -146,7 +146,7 @@ async function main() {
   dc.onOpen(() => {
     console.log("Local data channel opened");
   });
-  await new Promise((resolve) => setTimeout(resolve, 1e4));
+  await new Promise((resolve) => setTimeout(resolve, 15e3));
   if (iceCandidates.length === 0) {
     console.error("No ICE candidates gathered after 10 seconds");
     process.exit(1);
