@@ -6,6 +6,11 @@ Interactive terminal access to GitHub Actions runners via browser using WebRTC f
 
 ## Usage in GitHub Actions
 
+### Setup
+
+1. Create an One Time Password (otp) secret and add to the repos Actions secrets as `TERMINAL_OTP_SECRET`. Use `python3 -c "import secrets, base64; print(base64.b32encode(secrets.token_bytes(20)).decode())"` then add this to your Password Manager to allow you to generate OTP's using it.
+2. Create a workflow which will fail and add `lawrencegripper/actions-term-on-fail`. 
+
 ```yaml
 permissions:
   id-token: write  # Required for OIDC authentication
@@ -17,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       
       # Add the action early - it uses post-job hook to run only on failure
-      - uses: lawrencegripper/action-term-on-fail@v1
+      - uses: lawrencegripper/action-term-on-fail
         with:
           otp-secret: ${{ secrets.TERMINAL_OTP_SECRET }}
           timeout: '30'  # Optional: minutes to wait (default: 30)
@@ -26,10 +31,12 @@ jobs:
       - run: exit 1 
 ```
 
-Then 
+### Usage
+
 1. Go to https://actions-term.gripdev.xyz/
-2. Login with your GitHub username and accept prompt to enable notifications the leave tab running 
-3. You'll be notified when an action fails and get a terminal
+2. Login with your GitHub username and accept prompt to enable notifications then leave the tab running 
+3. You'll be notified when an action fails and get a terminal.
+4. Click on the session and use the terminal 🚀
 
 Note: You can only access failed workflows initiate by you (actor must match).
 
