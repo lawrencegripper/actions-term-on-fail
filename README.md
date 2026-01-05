@@ -4,6 +4,9 @@ Ever wanted to jump onto an interactive terminal to poke around and see why a bu
 
 Interactive terminal access to GitHub Actions runners via browser using WebRTC for direct P2P connection when an action fails.
 
+<img width="3802" height="2019" alt="image" src="https://github.com/user-attachments/assets/8bd1417a-63dc-4d36-8e48-f749f849505f" />
+
+
 ## Usage in GitHub Actions
 
 ### Setup
