@@ -4,6 +4,36 @@ Ever wanted to jump onto an interactive terminal to poke around and see why a bu
 
 Interactive terminal access to GitHub Actions runners via browser using WebRTC for direct P2P connection when an action fails.
 
+## Usage in GitHub Actions
+
+```yaml
+permissions:
+  id-token: write  # Required for OIDC authentication
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Add the action early - it uses post-job hook to run only on failure
+      - uses: lawrencegripper/action-term-on-fail@v1
+        with:
+          otp-secret: ${{ secrets.TERMINAL_OTP_SECRET }}
+          timeout: '30'  # Optional: minutes to wait (default: 30)
+      
+      # Your build steps... simulate a failure
+      - run: exit 1 
+```
+
+Then 
+1. Go to https://actions-term.gripdev.xyz/
+2. Login with your GitHub username and accept prompt to enable notifications the leave tab running 
+3. You'll be notified when an action fails and get a terminal
+
+Note: You can only access failed workflows initiate by you (actor must match).
+
+
 ## Architecture
 
 ```
@@ -51,28 +81,6 @@ The OTP verification happens **directly between the browser and the runner** ove
 2. **Server (Go)** - HTTP server for session discovery and WebRTC signaling only (no terminal data proxying)
 3. **Web UI** - Confirm user identify then show available sessions. Uses signaling server to establish peer to peer (WebRTC) connection to client and provide terminal (via `ghostty-web`)
 
-## Usage in GitHub Actions
-
-```yaml
-permissions:
-  id-token: write  # Required for OIDC authentication
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      # Add the action early - it uses post-job hook to run only on failure
-      - uses: your-org/action-term-on-fail@v1
-        with:
-          otp-secret: ${{ secrets.TERMINAL_OTP_SECRET }}
-          timeout: '30'  # Optional: minutes to wait (default: 30)
-      
-      # Your build steps...
-      - run: npm ci
-      - run: npm test
-```
 
 ### Inputs
 
