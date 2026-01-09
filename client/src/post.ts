@@ -3,10 +3,8 @@ import * as core from '@actions/core';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// __dirname is available natively in CommonJS
 
 interface ExecError extends Error {
   killed?: boolean;

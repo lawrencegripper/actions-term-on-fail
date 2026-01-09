@@ -1,10 +1,9 @@
 {
   "name": "@actions-term-on-fail/client",
   "version": "1.0.0",
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist --external:node-pty --external:node-datachannel",
+    "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=cjs --outdir=dist --external:node-pty --external:node-datachannel",
     "start": "node dist/index.js"
   },
   "dependencies": {

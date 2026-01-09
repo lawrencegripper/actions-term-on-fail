@@ -1,8 +1,32 @@
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
 // src/index.ts
-import * as pty from "node-pty";
+var pty = __toESM(require("node-pty"));
 
 // node_modules/otpauth/dist/otpauth.node.mjs
-import * as crypto from "node:crypto";
+var crypto = __toESM(require("node:crypto"), 1);
 var uintDecode = (num) => {
   const buf = new ArrayBuffer(8);
   const arr = new Uint8Array(buf);
@@ -621,8 +645,8 @@ var TOTP = class _TOTP {
 };
 
 // src/index.ts
-import * as nodeDataChannel from "node-datachannel";
-import { randomInt } from "crypto";
+var nodeDataChannel = __toESM(require("node-datachannel"));
+var import_crypto = require("crypto");
 var SERVER_URL = process.env.SERVER_URL || "http://localhost:7373";
 var SHELL = process.env.SHELL || "/bin/bash";
 var OTP_SECRET = process.env.OTP_SECRET || "";
@@ -650,7 +674,7 @@ async function getOIDCToken() {
   if (process.env.DEV_MODE === "true") {
     const actor = process.env.GITHUB_ACTOR || process.env.USER || "devuser";
     const repo = process.env.GITHUB_REPOSITORY || "dev/repo";
-    const runId = process.env.GITHUB_RUN_ID || randomInt(1e3, 9999).toString();
+    const runId = process.env.GITHUB_RUN_ID || (0, import_crypto.randomInt)(1e3, 9999).toString();
     console.log(`DEV MODE: Using mock token for actor=${actor}`);
     return `dev:${actor}:${repo}:${runId}`;
   }
