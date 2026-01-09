@@ -83,6 +83,9 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
         });
       } else if (peerConnection.connectionState === 'failed') {
         onStatus?.('error', 'Connection failed');
+      } else if (peerConnection.connectionState === 'disconnected') {
+        onStatus?.('error', 'Connection lost');
+        onClose?.();
       }
     };
 
