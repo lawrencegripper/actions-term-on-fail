@@ -77,6 +77,10 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
       console.log('Connection state:', peerConnection.connectionState);
       if (peerConnection.connectionState === 'connected') {
         onStatus?.('connected', 'Connected!');
+        // Log successful ICE candidate details (don't await - let it run async)
+        logSuccessfulIceCandidate(peerConnection).catch(err => {
+          console.warn('Failed to log ICE candidate:', err);
+        });
       } else if (peerConnection.connectionState === 'failed') {
         onStatus?.('error', 'Connection failed');
       }
@@ -304,6 +308,76 @@ export function cleanup() {
   if (peerConnection) {
     peerConnection.close();
     peerConnection = null;
+  }
+}
+
+// Log successful ICE candidate pair details
+async function logSuccessfulIceCandidate(pc) {
+  try {
+    const stats = await pc.getStats();
+    let selectedPair = null;
+    let localCandidate = null;
+    let remoteCandidate = null;
+
+    // Find the succeeded or nominated candidate pair
+    stats.forEach((report) => {
+      if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
+        selectedPair = report;
+      }
+    });
+
+    if (!selectedPair) {
+      console.log('📡 WebRTC connected but no succeeded candidate pair found in stats');
+      return;
+    }
+
+    // Get local and remote candidate details
+    stats.forEach((report) => {
+      if (report.type === 'local-candidate' && report.id === selectedPair.localCandidateId) {
+        localCandidate = report;
+      }
+      if (report.type === 'remote-candidate' && report.id === selectedPair.remoteCandidateId) {
+        remoteCandidate = report;
+      }
+    });
+
+    // Format candidate info for easy reading
+    const formatCandidate = (candidate, label) => {
+      if (!candidate) return `${label}: Unknown`;
+      const type = candidate.candidateType || 'unknown';
+      const typeDescriptions = {
+        'host': 'direct local IP',
+        'srflx': 'server reflexive - NAT traversal via STUN',
+        'prflx': 'peer reflexive - discovered during ICE checks',
+        'relay': 'relayed through TURN server'
+      };
+      const typeDesc = typeDescriptions[type] || type;
+      const protocol = candidate.protocol || 'unknown';
+      const address = candidate.address || candidate.ip || 'unknown';
+      const port = candidate.port || 'unknown';
+      const relayProtocol = candidate.relayProtocol ? ` (relay: ${candidate.relayProtocol})` : '';
+      return `${label}: ${type} (${typeDesc}) via ${protocol} - ${address}:${port}${relayProtocol}`;
+    };
+
+    console.log('%c📡 WebRTC Connection Established', 'color: #4CAF50; font-weight: bold; font-size: 14px');
+    console.log('%cSuccessful ICE Candidate Pair:', 'color: #2196F3; font-weight: bold');
+    console.log(`  ${formatCandidate(localCandidate, 'Local')}`);
+    console.log(`  ${formatCandidate(remoteCandidate, 'Remote')}`);
+    
+    // Log additional useful info
+    if (selectedPair.currentRoundTripTime) {
+      console.log(`  RTT: ${(selectedPair.currentRoundTripTime * 1000).toFixed(2)}ms`);
+    }
+    
+    // Log full details in a collapsed group for debugging
+    console.groupCollapsed('Full ICE candidate details');
+    console.log('Selected pair:', selectedPair);
+    console.log('Local candidate:', localCandidate);
+    console.log('Remote candidate:', remoteCandidate);
+    console.groupEnd();
+
+  } catch (err) {
+    console.warn('Failed to get ICE candidate stats:', err);
   }
 }
 
