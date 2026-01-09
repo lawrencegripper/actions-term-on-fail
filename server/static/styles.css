@@ -329,9 +329,6 @@ body {
 
 /* SSE Connection Indicator */
 .sse-indicator {
-  position: fixed;
-  top: 16px;
-  right: 16px;
   display: none;
   align-items: center;
   gap: 6px;
@@ -359,4 +356,139 @@ body {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 480px) {
+  /* Header adjustments for mobile */
+  .header-bar {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .header-title {
+    font-size: 14px;
+  }
+
+  .header-links {
+    gap: 8px;
+  }
+
+  .header-links a {
+    padding: 4px;
+  }
+
+  .header-links a svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Hide blog and mastodon links on mobile to save space */
+  .header-links a.header-link-desktop {
+    display: none !important;
+  }
+
+  /* SSE indicator styling for mobile */
+  .sse-indicator {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  /* When terminal is open on mobile, hide the session list completely */
+  #app.terminal-open {
+    height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  /* Terminal takes full height on mobile when open */
+  #terminal-container.open {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile */
+  }
+
+  /* Terminal header adjustments for mobile */
+  .terminal-header {
+    padding: 8px 12px;
+  }
+
+  .terminal-title {
+    font-size: 11px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Session items more compact on mobile */
+  .session-item {
+    padding: 10px 12px;
+  }
+
+  .session-icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 10px;
+  }
+
+  .session-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .session-name {
+    font-size: 13px;
+  }
+
+  .session-meta {
+    font-size: 11px;
+  }
+
+  .session-badge {
+    font-size: 11px;
+    padding: 0 6px;
+    height: 18px;
+    margin-left: 8px;
+  }
+
+  /* Status banner adjustments */
+  .status-banner {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  /* OTP modal adjustments for mobile */
+  .modal-overlay .Box {
+    width: 95% !important;
+    margin: 0 10px;
+  }
+
+  .otp-input {
+    font-size: 20px !important;
+    letter-spacing: 6px;
+  }
+
+  /* Section header more compact */
+  .section-header {
+    padding: 10px 12px;
+    font-size: 11px;
+  }
+
+  /* Empty state adjustments */
+  .empty-state {
+    padding: 32px 12px;
+  }
+
+  .empty-state-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .empty-state-title {
+    font-size: 14px;
+  }
+
+  .empty-state-text {
+    font-size: 12px;
+  }
 }

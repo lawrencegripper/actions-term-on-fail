@@ -230,7 +230,9 @@ async function main() {
                 }
               }
             });
-            shell.write('echo "Terminal session started. Type commands below."\r');
+            setTimeout(() => {
+              shell?.write('clear && echo "Terminal session started. Type commands below."\r');
+            }, 1e3);
             dc.sendMessage(JSON.stringify({ type: "setup-complete", success: true }) + "\n");
           } else {
             console.log("OTP verification failed - invalid code");

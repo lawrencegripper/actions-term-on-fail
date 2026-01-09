@@ -262,27 +262,27 @@ async function main() {
 
   dc.onMessage((data) => {
     const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
-    
+
     if (!otpVerified) {
       // Expecting setup message with OTP and terminal dimensions
       try {
         const msg = JSON.parse(text);
         if (msg.type === 'setup' && msg.code) {
           console.log('Received setup message, validating OTP...');
-          
+
           // In dev mode, accept "000000" as a valid code for testing
           const isDevBypass = process.env.DEV_MODE === 'true' && msg.code === '000000';
           // In dev mode without OTP_SECRET, accept any code
           const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
-          
+
           if (isValid) {
             console.log('OTP verified successfully');
             otpVerified = true;
-            
+
             // Create PTY with dimensions from setup message
             const cols = msg.cols && msg.cols > 0 ? msg.cols : 80;
             const rows = msg.rows && msg.rows > 0 ? msg.rows : 24;
-            
+
             shell = pty.spawn(SHELL, [], {
               name: 'xterm-256color',
               cols,
@@ -290,9 +290,9 @@ async function main() {
               cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
               env: process.env as Record<string, string>,
             });
-            
+
             console.log(`PTY started with dimensions ${cols}x${rows}, PID:`, shell.pid);
-            
+
             // Set up shell data handler
             shell.onData((shellData) => {
               if (dcOpen && otpVerified) {
@@ -304,8 +304,11 @@ async function main() {
               }
             });
 
-            shell.write('echo "Terminal session started. Type commands below."\r');
-            
+            setTimeout(() => {
+              shell?.write('clear && echo "Terminal session started. Type commands below."\r');
+            }, 1000);
+
+
             // Send success response
             dc.sendMessage(JSON.stringify({ type: 'setup-complete', success: true }) + '\n');
           } else {
@@ -322,7 +325,7 @@ async function main() {
       }
       return;
     }
-    
+
     // OTP verified - forward terminal data to PTY
     if (shell) {
       shell.write(text);
