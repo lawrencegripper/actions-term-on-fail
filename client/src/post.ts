@@ -6,13 +6,8 @@ import * as fs from 'fs';
 
 // __dirname is available natively in CommonJS
 
-interface ExecError extends Error {
-  killed?: boolean;
-}
-
 interface ExecOptions {
   env?: NodeJS.ProcessEnv;
-  timeout?: number;
 }
 
 function exec(cmd: string, args: string[], options: ExecOptions = {}): Promise<void> {
@@ -22,21 +17,8 @@ function exec(cmd: string, args: string[], options: ExecOptions = {}): Promise<v
       ...options,
     });
 
-    let killed = false;
-    const timeoutId = options.timeout
-      ? setTimeout(() => {
-          killed = true;
-          proc.kill('SIGTERM');
-        }, options.timeout)
-      : null;
-
     proc.on('close', (code) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      if (killed) {
-        const error: ExecError = new Error('Process killed due to timeout');
-        error.killed = true;
-        reject(error);
-      } else if (code !== 0) {
+      if (code !== 0) {
         reject(new Error(`Process exited with code ${code}`));
       } else {
         resolve();
@@ -44,7 +26,6 @@ function exec(cmd: string, args: string[], options: ExecOptions = {}): Promise<v
     });
 
     proc.on('error', (err) => {
-      if (timeoutId) clearTimeout(timeoutId);
       reject(err);
     });
   });
@@ -108,22 +89,16 @@ async function run(): Promise<void> {
   const clientDist = path.join(__dirname, 'index.js');
 
   try {
-    const timeoutMs = timeout * 60 * 1000;
     await exec('node', [clientDist], {
       env: {
         ...process.env,
         SERVER_URL: serverUrl,
         OTP_SECRET: otpSecret,
+        CONNECTION_TIMEOUT_MINUTES: timeout.toString(),
       },
-      timeout: timeoutMs,
     });
   } catch (error) {
-    const execError = error as ExecError;
-    if (execError.killed) {
-      console.log('Terminal session ended (timeout)');
-    } else {
-      core.warning(`Terminal error: ${execError.message}`);
-    }
+    core.warning(`Terminal error: ${(error as Error).message}`);
   }
 }
 

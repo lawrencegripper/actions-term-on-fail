@@ -6,6 +6,7 @@ import { randomInt } from 'crypto';
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:7373';
 const SHELL = process.env.SHELL || '/bin/bash';
 const OTP_SECRET = process.env.OTP_SECRET || '';
+const CONNECTION_TIMEOUT_MINUTES = parseInt(process.env.CONNECTION_TIMEOUT_MINUTES || '30', 10);
 
 // Create TOTP instance for validation
 function createTOTP(secret: string): OTPAuth.TOTP {
@@ -236,11 +237,29 @@ async function main() {
     console.error('SRE channel error:', err);
   };
 
+  // Set up connection timeout - exits if no browser connects within the timeout
+  const connectionTimeoutMs = CONNECTION_TIMEOUT_MINUTES * 60 * 1000;
+  let connectionEstablished = false;
+  const connectionTimeout = setTimeout(() => {
+    if (!connectionEstablished) {
+      console.log(`No connection established within ${CONNECTION_TIMEOUT_MINUTES} minutes, exiting`);
+      eventSource.close();
+      process.exit(0);
+    }
+  }, connectionTimeoutMs);
+
+  console.log(`Waiting for browser connection (timeout: ${CONNECTION_TIMEOUT_MINUTES} minutes)...`);
+
   // Set up data channel handler before receiving answer
   pc.onStateChange((state) => {
     console.log('Connection state:', state);
-    if (state === 'closed') {
+    if (state === 'connected') {
+      connectionEstablished = true;
+      clearTimeout(connectionTimeout);
+      console.log('Browser connected - session active');
+    } else if (state === 'closed') {
       console.log('Connection closed, exiting');
+      clearTimeout(connectionTimeout);
       if (shell) {
         shell.kill();
       }

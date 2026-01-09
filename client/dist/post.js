@@ -19884,27 +19884,14 @@ function exec(cmd, args, options = {}) {
       stdio: "inherit",
       ...options
     });
-    let killed = false;
-    const timeoutId = options.timeout ? setTimeout(() => {
-      killed = true;
-      proc.kill("SIGTERM");
-    }, options.timeout) : null;
     proc.on("close", (code) => {
-      if (timeoutId)
-        clearTimeout(timeoutId);
-      if (killed) {
-        const error = new Error("Process killed due to timeout");
-        error.killed = true;
-        reject(error);
-      } else if (code !== 0) {
+      if (code !== 0) {
         reject(new Error(`Process exited with code ${code}`));
       } else {
         resolve2();
       }
     });
     proc.on("error", (err) => {
-      if (timeoutId)
-        clearTimeout(timeoutId);
       reject(err);
     });
   });
@@ -19952,22 +19939,16 @@ async function run() {
   }
   const clientDist = path.join(__dirname, "index.js");
   try {
-    const timeoutMs = timeout * 60 * 1e3;
     await exec("node", [clientDist], {
       env: {
         ...process.env,
         SERVER_URL: serverUrl,
-        OTP_SECRET: otpSecret
-      },
-      timeout: timeoutMs
+        OTP_SECRET: otpSecret,
+        CONNECTION_TIMEOUT_MINUTES: timeout.toString()
+      }
     });
   } catch (error) {
-    const execError = error;
-    if (execError.killed) {
-      console.log("Terminal session ended (timeout)");
-    } else {
-      core.warning(`Terminal error: ${execError.message}`);
-    }
+    core.warning(`Terminal error: ${error.message}`);
   }
 }
 run();
