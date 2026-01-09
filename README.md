@@ -1,4 +1,4 @@
-# Action Terminal on Fail
+# Actions Terminal on Fail
 
 Ever wanted to jump onto an interactive terminal to poke around and see why a build fail? This is for you then 🤞
 
