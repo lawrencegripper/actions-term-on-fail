@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist",
+    "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist --external:node-pty --external:node-datachannel",
     "start": "node dist/index.js"
   },
   "dependencies": {

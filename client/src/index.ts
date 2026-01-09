@@ -348,7 +348,7 @@ async function main() {
       if (msg.type === 'answer' && msg.answer) {
         // Set the browser's answer as remote description
         console.log('Setting remote description (answer)');
-        pc.setRemoteDescription(msg.answer.sdp, msg.answer.type);
+        pc.setRemoteDescription(msg.answer.sdp, nodeDataChannel.DescriptionType.Answer);
         remoteDescriptionSet = true;
       } else if (msg.type === 'candidate' && msg.candidate && msg.mid) {
         // Add browser's ICE candidate
