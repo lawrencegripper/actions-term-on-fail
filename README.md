@@ -41,7 +41,7 @@ jobs:
 3. You'll be notified when an action fails and get a terminal.
 4. Click on the session and use the terminal 🚀
 
-Note: You can only access failed workflows initiate by you (actor must match).
+You can only access failed workflows **initiate** by you (actor must match). For example, if a push by your GitHub user triggers the workflow, or you use a `workflow_dispatch` trigger, then it will show up. Runs triggered by other users will not show for you.
 
 
 ## Architecture
@@ -65,9 +65,11 @@ Note: You can only access failed workflows initiate by you (actor must match).
 STUN (Google): Used only for ICE candidate discovery, no data relay
 ```
 
-## Security Model
+## Security
 
-This solution implements a **zero-trust signaling server**. You can also self-host their own signaling server instance. 
+1. OIDC from the Action and OAuth from the browser ensure you only see Actions which you triggered (`actor` must be your GitHub user)
+1. The terminal connection is formed peer to peer so no session data is seen by the signaling server. (Note: You can also self-host their own signaling server instance too)
+1. One Time Password secret is not known by the signaling server
 
 ### Authentication
 
@@ -79,10 +81,10 @@ This solution implements a **zero-trust signaling server**. You can also self-ho
 
 ### Why use a One-Time-Password (OTP) when connecting?
 
-The OTP verification happens **directly between the browser and the runner** over the encrypted WebRTC data channel. This is a critical security feature:
+The OTP verification happens **directly between the browser and the runner** over the encrypted WebRTC data channel. The aim is that:
 
 - **Server cannot intercept**: The OTP secret is only known to the workflow (via GitHub Secrets) and the user. The server never sees the OTP code or secret.
-- **Server cannot inject commands**: All terminal I/O flows directly between browser and runner. The server only facilitates initial connection setup (ICE candidates exchange).
+- **Server cannot inject commands**: All terminal I/O flows directly between browser and runner. The server only helps to establish that connection setup.
 
 
 ### Components
@@ -109,18 +111,11 @@ Generate a Base32 secret and add it to your GitHub repository secrets:
 python3 -c "import secrets, base64; print(base64.b32encode(secrets.token_bytes(20)).decode())"
 ```
 
-Then add this to your authenticator app (Google Authenticator, 1Password, etc.) using:
-- **Issuer**: ActionTerminal
-- **Account**: Terminal
-- **Algorithm**: SHA1
-- **Digits**: 6
-- **Period**: 30 seconds
-
-**How it works:** The action registers during setup but only starts the terminal in the **post-job hook** if the workflow fails. No need for `if: failure()` - just add it early in your workflow.
+Then add this to your authenticator app (Google Authenticator, 1Password, etc.)
 
 ### Required Permissions
 
-The `id-token: write` permission is required for the action to authenticate with the server using GitHub's OIDC tokens. This ensures only the workflow actor can access their terminal session.
+The `id-token: write` permission is required for the action to create an OIDC token. This is used to prove to the signaling server the identity, repo and actor for which the action is running.
 
 ## Development
 
