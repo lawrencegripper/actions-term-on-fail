@@ -18,7 +18,7 @@ jobs:
         uses: lawrencegripper/actions-term-on-fail@main
         with:
           otp-secret: ${{ secrets.OTP_SECRET }}
-          timeout: "8"
+          timeout: "2"
 
       - name: Intentional failure to trigger action
         run: |
