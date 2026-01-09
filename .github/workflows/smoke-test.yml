@@ -28,7 +28,7 @@ jobs:
           npm run build
 
       - name: Use terminal-on-fail action
-        uses: lawrencegripper/action-term-on-fail@main
+        uses: lawrencegripper/actions-term-on-fail@main
         with:
           otp-secret: ${{ secrets.OTP_SECRET }}
           timeout: "8"
