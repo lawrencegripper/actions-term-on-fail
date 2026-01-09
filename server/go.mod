@@ -1,4 +1,4 @@
-module github.com/lawrencegripper/action-term-on-fail/server
+module github.com/lawrencegripper/actions-term-on-fail/server
 
 go 1.25
 

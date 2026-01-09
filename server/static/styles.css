@@ -177,6 +177,7 @@ body {
 .header-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 16px;
   border-bottom: 1px solid #21262d;
   background: #0d1117;
@@ -195,6 +196,29 @@ body {
   font-size: 16px;
   font-weight: 600;
   color: #c9d1d9;
+}
+
+.header-links {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.header-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.header-links a:hover {
+  background-color: #30363d;
+}
+
+.header-links a:hover svg {
+  fill: #c9d1d9;
 }
 
 .section-header {

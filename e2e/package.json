@@ -1,5 +1,5 @@
 {
-  "name": "action-term-on-fail-e2e",
+  "name": "actions-term-on-fail-e2e",
   "version": "1.0.0",
   "private": true,
   "scripts": {

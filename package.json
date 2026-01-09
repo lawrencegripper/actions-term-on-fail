@@ -1,5 +1,5 @@
 {
-  "name": "action-term-on-fail",
+  "name": "actions-term-on-fail",
   "version": "1.0.0",
   "private": true,
   "scripts": {
