@@ -38,7 +38,7 @@ export async function initTerminal() {
 
 // Connect to a session via WebRTC
 export async function connectToSession(runId, otpCode, sessionName, callbacks) {
-  const { onStatus, onConnected, onOtpFailed, onTerminalOpen, onTerminalData, onClose } = callbacks;
+  const { onStatus, onClose } = callbacks;
   
   onStatus?.('connecting', 'Connecting to runner...');
 

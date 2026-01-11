@@ -46,7 +46,9 @@ const App = {
           sessions.value = await resp.json() || [];
           return true;
         }
-      } catch (e) { }
+      } catch {
+        // Auth check failed, will return false below
+      }
       isAuthenticated.value = false;
       return false;
     }
