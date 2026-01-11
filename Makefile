@@ -80,7 +80,7 @@ stop-e2e-services:
 	@echo "E2E services stopped"
 
 # Run e2e tests (starts services, runs tests, stops services)
-test-e2e: run-e2e-services
+smoketest: run-e2e-services
 	@echo "Installing e2e dependencies..."
 	@cd e2e && npm install
 	@cd e2e && npx playwright install chromium

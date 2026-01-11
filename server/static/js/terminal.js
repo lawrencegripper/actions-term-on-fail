@@ -1,5 +1,5 @@
 // Terminal module - handles WebRTC connection and terminal rendering
-import { init, Terminal, FitAddon } from '/vendor/ghostty/ghostty-web.js';
+import { init, Terminal, FitAddon } from 'https://cdn.jsdelivr.net/npm/ghostty-web@0.4.0/dist/ghostty-web.js';
 
 // Dev mode detection - enables test output capture
 const IS_DEV_MODE = window.location.hostname === 'localhost' && window.location.port === '7373';
