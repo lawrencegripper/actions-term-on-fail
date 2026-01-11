@@ -141,3 +141,5 @@ The `id-token: write` permission is required for the action to create an OIDC to
 | `SERVER_URL` | Signaling server URL |
 | `OTP_SECRET` | Base32-encoded TOTP secret |
 | `DEV_MODE` | Accept mock OIDC tokens |
+
+> Note: This is a personal project. No SLA or guarantees provided.
