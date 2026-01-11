@@ -32,8 +32,7 @@ var uintDecode = (num) => {
   const arr = new Uint8Array(buf);
   let acc = num;
   for (let i = 7; i >= 0; i--) {
-    if (acc === 0)
-      break;
+    if (acc === 0) break;
     arr[i] = acc & 255;
     acc -= arr[i];
     acc /= 256;
@@ -41,8 +40,7 @@ var uintDecode = (num) => {
   return arr;
 };
 var globalScope = (() => {
-  if (typeof globalThis === "object")
-    return globalThis;
+  if (typeof globalThis === "object") return globalThis;
   else {
     Object.defineProperty(Object.prototype, "__GLOBALTHIS__", {
       get() {
@@ -51,18 +49,14 @@ var globalScope = (() => {
       configurable: true
     });
     try {
-      if (typeof __GLOBALTHIS__ !== "undefined")
-        return __GLOBALTHIS__;
+      if (typeof __GLOBALTHIS__ !== "undefined") return __GLOBALTHIS__;
     } finally {
       delete Object.prototype.__GLOBALTHIS__;
     }
   }
-  if (typeof self !== "undefined")
-    return self;
-  else if (typeof window !== "undefined")
-    return window;
-  else if (typeof global !== "undefined")
-    return global;
+  if (typeof self !== "undefined") return self;
+  else if (typeof window !== "undefined") return window;
+  else if (typeof global !== "undefined") return global;
   return void 0;
 })();
 var canonicalizeAlgorithm = (algorithm) => {
@@ -102,8 +96,7 @@ var ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 var base32Decode = (str) => {
   str = str.replace(/ /g, "");
   let end = str.length;
-  while (str[end - 1] === "=")
-    --end;
+  while (str[end - 1] === "=") --end;
   str = (end < str.length ? str.substring(0, end) : str).toUpperCase();
   const buf = new ArrayBuffer(str.length * 5 / 8 | 0);
   const arr = new Uint8Array(buf);
@@ -112,8 +105,7 @@ var base32Decode = (str) => {
   let index = 0;
   for (let i = 0; i < str.length; i++) {
     const idx = ALPHABET.indexOf(str[i]);
-    if (idx === -1)
-      throw new TypeError(`Invalid character found: ${str[i]}`);
+    if (idx === -1) throw new TypeError(`Invalid character found: ${str[i]}`);
     value = value << 5 | idx;
     bits += 5;
     if (bits >= 8) {
@@ -153,8 +145,7 @@ var hexEncode = (arr) => {
   let str = "";
   for (let i = 0; i < arr.length; i++) {
     const hex = arr[i].toString(16);
-    if (hex.length === 1)
-      str += "0";
+    if (hex.length === 1) str += "0";
     str += hex;
   }
   return str.toUpperCase();
@@ -394,8 +385,7 @@ var HOTP = class _HOTP {
   * @returns {number|null} Token delta or null if it is not found in the search window, in which case it should be considered invalid.
   */
   static validate({ token, secret, algorithm, digits = _HOTP.defaults.digits, counter = _HOTP.defaults.counter, window: window2 = _HOTP.defaults.window }) {
-    if (token.length !== digits)
-      return null;
+    if (token.length !== digits) return null;
     let delta = null;
     const check = (i) => {
       const generatedToken = _HOTP.generate({
@@ -411,11 +401,9 @@ var HOTP = class _HOTP {
     check(counter);
     for (let i = 1; i <= window2 && delta === null; ++i) {
       check(counter - i);
-      if (delta !== null)
-        break;
+      if (delta !== null) break;
       check(counter + i);
-      if (delta !== null)
-        break;
+      if (delta !== null) break;
     }
     return delta;
   }
@@ -730,8 +718,7 @@ var EventSource = class {
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
-        if (done)
-          break;
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
