@@ -62,7 +62,9 @@ func init() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		b := make([]byte, 32)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("Failed to generate random JWT secret: %v", err)
+		}
 		secret = hex.EncodeToString(b)
 		log.Println("Generated random JWT secret (set JWT_SECRET in production)")
 	}
@@ -86,7 +88,9 @@ func init() {
 
 	// Initialize JWKS cache for GitHub Actions OIDC
 	jwkCache = jwk.NewCache(context.Background())
-	jwkCache.Register(githubJWKSURL, jwk.WithMinRefreshInterval(15*time.Minute))
+	if err := jwkCache.Register(githubJWKSURL, jwk.WithMinRefreshInterval(15*time.Minute)); err != nil {
+		log.Fatalf("Failed to register JWKS cache: %v", err)
+	}
 }
 
 func main() {
@@ -166,7 +170,9 @@ func handleRunnerRegister(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Registered run: actor %s (repo: %s, run: %s)", actor, repo, runID)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+	}
 }
 
 // extractBearerToken extracts the token from Authorization: Bearer <token> header
@@ -359,7 +365,9 @@ func handleClientGetWebRTCDetails(w http.ResponseWriter, r *http.Request) {
 		"offer": sess.Offer,
 		"runId": sess.RunID,
 	}
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("Failed to encode WebRTC details response: %v", err)
+	}
 }
 
 func handleClientSendWebRTCAnswer(w http.ResponseWriter, r *http.Request) {
@@ -443,7 +451,9 @@ func handleClientSendWebRTCAnswer(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Forwarded answer and %d ICE candidates to runner %s", len(iceCandidates), sess.Actor)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+	}
 }
 
 // handleClientSessions - Get sessions for authenticated user
@@ -476,7 +486,9 @@ func handleClientSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	runIdRunnerSseClientsMu.RUnlock()
 
-	json.NewEncoder(w).Encode(activeSessions)
+	if err := json.NewEncoder(w).Encode(activeSessions); err != nil {
+		log.Printf("Failed to encode sessions response: %v", err)
+	}
 }
 
 // handleClientSubscribe - SSE endpoint for browser clients to receive session updates
@@ -734,7 +746,10 @@ func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	var user struct {
 		Login string `json:"login"`
 	}
-	json.NewDecoder(resp.Body).Decode(&user)
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		http.Error(w, "failed to decode user info: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	setAuthCookie(w, user.Login)
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
@@ -748,7 +763,7 @@ func handleDevAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	if username == "" {
 		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, `<!DOCTYPE html>
+		if _, err := io.WriteString(w, `<!DOCTYPE html>
 <html><head><title>Dev Login</title>
 <style>body{font-family:system-ui;background:#0d1117;color:#c9d1d9;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}
 form{background:#161b22;padding:30px;border-radius:8px;border:1px solid #30363d}
@@ -759,7 +774,9 @@ button:hover{background:#2ea043}</style></head>
 <h2> DEVMODE: Mock Login</h2>
 <input name="user" placeholder="GitHub username" required>
 <button type="submit">Login</button>
-</form></body></html>`)
+</form></body></html>`); err != nil {
+			log.Printf("Failed to write dev login form: %v", err)
+		}
 		return
 	}
 

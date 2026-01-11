@@ -1,4 +1,4 @@
-.PHONY: all build build-server build-client run-server run-client run-devmode stop-devmode clean fmt test-e2e run-e2e-services stop-e2e-services
+.PHONY: all build build-server build-client run-server run-client run-devmode stop-devmode clean fmt lint lint-go lint-js test-e2e run-e2e-services stop-e2e-services
 
 # Include dev mode environment variables
 include .env.devmode
@@ -50,6 +50,17 @@ clean:
 # Format code
 fmt:
 	cd server && go fmt ./...
+
+# Lint all code
+lint: lint-go lint-js
+
+# Lint Go code with golangci-lint
+lint-go:
+	cd server && golangci-lint run ./...
+
+# Lint JavaScript/TypeScript code with ESLint
+lint-js:
+	// todo
 
 # Start services for e2e tests (server + 4 clients with different actors)
 run-e2e-services:
