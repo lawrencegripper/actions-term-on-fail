@@ -859,67 +859,31 @@ async function main() {
       process.exit(0);
     }
   });
-  let dcOpen = false;
   let otpVerified = false;
+  var otpValidationAttempted = false;
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
-    dcOpen = true;
   });
   dc.onMessage((data) => {
     const text = typeof data === "string" ? data : new TextDecoder().decode(data);
-    if (!otpVerified) {
-      try {
-        const msg = JSON.parse(text);
-        if (msg.type === "setup" && msg.code) {
-          console.log("Received setup message, validating OTP...");
-          const isDevBypass = process.env.DEV_MODE === "true" && msg.code === "000000";
-          const isValid = isDevBypass || validateOTP(OTP_SECRET, msg.code);
-          if (isValid) {
-            console.log("OTP verified successfully");
-            otpVerified = true;
-            const cols = msg.cols && msg.cols > 0 ? msg.cols : 80;
-            const rows = msg.rows && msg.rows > 0 ? msg.rows : 24;
-            shell = pty.spawn(SHELL, [], {
-              name: "xterm-256color",
-              cols,
-              rows,
-              cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
-              env: process.env
-            });
-            console.log(`PTY started with dimensions ${cols}x${rows}, PID:`, shell.pid);
-            shell.onData((shellData) => {
-              if (dcOpen && otpVerified) {
-                try {
-                  dc.sendMessage(shellData);
-                } catch (e) {
-                  console.log(e);
-                }
-              }
-            });
-            setTimeout(() => {
-              shell?.write('clear && echo "Terminal session started. Type commands below."\r');
-            }, 1e3);
-            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: true }) + "\n");
-          } else {
-            console.log("OTP verification failed - invalid code");
-            dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Invalid OTP code" }) + "\n");
-            setTimeout(() => {
-              dc.close();
-            }, 100);
-          }
-        }
-      } catch (e) {
-        console.log("Received non-JSON message before OTP verification, ignoring");
-      }
+    if (otpVerified && shell) {
+      shell.write(text);
       return;
     }
-    if (shell) {
-      shell.write(text);
+    if (otpValidationAttempted && !otpVerified) {
+      console.log("OTP already attempted");
+      process.exit(15);
     }
+    var setupMsg;
+    otpValidationAttempted = true;
+    setupMsg = exitIfOTPInvalid(setupMsg, text);
+    if (!otpVerified) return;
+    console.log("OTP verified successfully");
+    setupShellForwardingOutputToDataChannel(setupMsg);
+    dc.sendMessage(JSON.stringify({ type: "setup-complete", success: true }) + "\n");
   });
   dc.onClosed(() => {
     console.log("Data channel closed");
-    dcOpen = false;
     if (shell) {
       shell.kill();
     }
@@ -954,6 +918,56 @@ async function main() {
   };
   await new Promise(() => {
   });
+  function exitIfOTPInvalid(setupMsg, text) {
+    try {
+      setupMsg = JSON.parse(text);
+      if (setupMsg.type === "setup" && setupMsg.code) {
+        console.log("Received setup message, validating OTP...");
+        const isDevBypass = process.env.DEV_MODE === "true" && setupMsg.code === "000000";
+        otpVerified = isDevBypass || validateOTP(OTP_SECRET, setupMsg.code);
+        if (!otpVerified) {
+          console.log("OTP verification failed - invalid code");
+          dc.sendMessage(JSON.stringify({ type: "setup-complete", success: false, message: "Invalid OTP code" }) + "\n");
+          dc.close();
+          process.exit(16);
+        }
+      } else {
+        console.log("Invalid setup message received");
+        process.exit(17);
+      }
+    } catch (e) {
+      console.log("Received invalid message format", e);
+      process.exit(18);
+    }
+    return setupMsg;
+  }
+  function setupShellForwardingOutputToDataChannel(msg) {
+    const cols = msg.cols && msg.cols > 0 ? msg.cols : 80;
+    const rows = msg.rows && msg.rows > 0 ? msg.rows : 24;
+    shell = pty.spawn(SHELL, [], {
+      name: "xterm-256color",
+      cols,
+      rows,
+      cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
+      env: process.env
+    });
+    shell.onExit(() => {
+      console.log("Shell process exited. Closing down.");
+      dc.close();
+      process.exit(21);
+    });
+    console.log(`PTY started with dimensions ${cols}x${rows}, PID:`, shell.pid);
+    shell.onData((shellData) => {
+      try {
+        dc.sendMessage(shellData);
+      } catch (e) {
+        console.log(e);
+      }
+    });
+    setTimeout(() => {
+      shell?.write('clear && echo "Terminal session started. Type commands below."\r');
+    }, 1e3);
+  }
 }
 main().catch((err) => {
   console.error("Fatal error:", err);

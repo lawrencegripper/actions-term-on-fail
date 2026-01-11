@@ -116,7 +116,9 @@ const App = {
           );
         },
         onTerminalData: (data) => terminal.writeToTerminal(data),
-        onClose: () => terminal.writeCloseMessage()
+        onClose: () => {
+          closeTerminal();
+        }
       };
 
       await terminal.connectToSession(runId, code, sessionName, callbacks);

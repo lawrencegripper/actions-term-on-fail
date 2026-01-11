@@ -86,6 +86,8 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
       } else if (peerConnection.connectionState === 'disconnected') {
         onStatus?.('error', 'Connection lost');
         onClose?.();
+      } else {
+        onStatus?.('error', 'Unexpected connection state: ' + peerConnection.connectionState);
       }
     };
 
@@ -205,6 +207,7 @@ function setupDataChannel(dc, otpCode, runId, sessionName, callbacks) {
 
   dc.onclose = () => {
     console.log('Data channel closed');
+    onStatus?.('error', 'Connection closed by peer');
     onClose?.();
   };
 }
@@ -293,13 +296,6 @@ export function writeToTerminal(data) {
   }
   // Capture output for e2e testing in dev mode
   appendTestOutput(data);
-}
-
-// Close terminal connection message
-export function writeCloseMessage() {
-  if (term) {
-    term.write('\r\n[Connection closed]\r\n');
-  }
 }
 
 // Cleanup connections
