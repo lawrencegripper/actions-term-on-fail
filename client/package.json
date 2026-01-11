@@ -4,7 +4,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=cjs --outdir=dist --external:node-pty --external:node-datachannel",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "lint": "eslint src/"
   },
   "dependencies": {
     "@actions/core": "^2.0.2",
@@ -13,8 +14,11 @@
     "otpauth": "^9.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/node": "^25.0.6",
     "esbuild": "^0.27.2",
-    "typescript": "^5.0.0"
+    "eslint": "^9.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0"
   }
 }

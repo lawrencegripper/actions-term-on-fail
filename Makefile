@@ -60,7 +60,7 @@ lint-go:
 
 # Lint JavaScript/TypeScript code with ESLint
 lint-js:
-	// todo
+	cd client && npm install && npm run lint
 
 # Start services for e2e tests (server + 4 clients with different actors)
 run-e2e-services:

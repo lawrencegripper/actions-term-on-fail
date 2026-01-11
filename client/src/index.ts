@@ -293,7 +293,7 @@ async function main() {
   let otpVerified = false;
   // You only get one message and it must be `setup`
   // if you send anything else we'll ignore it
-  var otpValidationAttempted = false;
+  let otpValidationAttempted = false;
 
   // The data channel we created will be used
   dc.onOpen(() => {
@@ -302,7 +302,7 @@ async function main() {
 
   dc.onMessage((data) => {
     const text = typeof data === 'string' ? data : new TextDecoder().decode(data as Uint8Array);
-    
+
     // Forward data to shell if already authed
     if (otpVerified && shell) {
       shell.write(text);
@@ -316,12 +316,11 @@ async function main() {
     }
 
     // Track setup message we receive
-    var setupMsg: any;
     // Track to ensure only one attempt
     otpValidationAttempted = true;
 
     // Expecting setup message with OTP and terminal dimensions
-    setupMsg = exitIfOTPInvalid(setupMsg, text);
+    const setupMsg = exitIfOTPInvalid(text);
 
     // Should never happen, as exitIfOTPInvalid calls os.Exit but lets be careful
     if (!otpVerified) return; 
@@ -380,7 +379,8 @@ async function main() {
   // Keep alive
   await new Promise(() => { });
 
-  function exitIfOTPInvalid(setupMsg: any, text: string) {
+  function exitIfOTPInvalid(text: string): any {
+    let setupMsg: any;
     try {
       setupMsg = JSON.parse(text);
       if (setupMsg.type === 'setup' && setupMsg.code) {
