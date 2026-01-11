@@ -120,26 +120,6 @@ The `id-token: write` permission is required for the action to create an OIDC to
 
 ## Development
 
-`make run-devmode`
-
-### Environment Variables
-
-#### Server
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `JWT_SECRET` | Secret for signing session JWTs | Auto-generated |
-| `GITHUB_CLIENT_ID` | GitHub OAuth App Client ID | Required for production |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth App Secret | Required for production |
-| `GITHUB_REDIRECT_URI` | OAuth callback URL | Required for production |
-| `OIDC_EXPECTED_AUDIENCE` | Expected audience in OIDC tokens | `http://localhost:7373` |
-| `DEV_MODE` | Enable dev mode (mock auth) | `false` |
-| `PORT` | Server port | `7373` |
-
-#### Client
-| Variable | Description |
-|----------|-------------|
-| `SERVER_URL` | Signaling server URL |
-| `OTP_SECRET` | Base32-encoded TOTP secret |
-| `DEV_MODE` | Accept mock OIDC tokens |
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, make targets, and environment variables.
 
 > Note: This is a personal project. No SLA or guarantees provided.
