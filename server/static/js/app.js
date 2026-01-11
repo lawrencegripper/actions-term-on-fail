@@ -30,7 +30,6 @@ const App = {
     const statusMessage = ref(null);
     const statusType = ref('');
     const showOtpModal = ref(false);
-    const otpError = ref('');
     const terminalOpen = ref(false);
     const terminalSessionName = ref('Terminal');
     const pendingSession = ref(null);
@@ -81,7 +80,6 @@ const App = {
         runId: session.runId,
         repoName: session.repo || 'Terminal'
       };
-      otpError.value = '';
       showOtpModal.value = true;
     }
 
@@ -104,9 +102,8 @@ const App = {
       const callbacks = {
         onStatus: (status, message) => showStatus(status, message),
         onOtpFailed: (runId, message) => {
-          pendingSession.value = { runId, repoName: sessionName };
-          otpError.value = message;
-          showOtpModal.value = true;
+          // Don't re-show OTP modal - the runner will disconnect after a bad OTP
+          showStatus('error', message || 'OTP verification failed');
         },
         onTerminalOpen: async (initialData, name) => {
           terminalSessionName.value = name || 'Terminal';
@@ -230,7 +227,6 @@ const App = {
       statusMessage,
       statusType,
       showOtpModal,
-      otpError,
       terminalOpen,
       terminalSessionName,
       promptOtp,
