@@ -860,7 +860,7 @@ async function main() {
     }
   });
   let otpVerified = false;
-  var otpValidationAttempted = false;
+  let otpValidationAttempted = false;
   dc.onOpen(() => {
     console.log("Data channel opened, waiting for OTP verification");
   });
@@ -874,9 +874,8 @@ async function main() {
       console.log("OTP already attempted");
       process.exit(15);
     }
-    var setupMsg;
     otpValidationAttempted = true;
-    setupMsg = exitIfOTPInvalid(setupMsg, text);
+    const setupMsg = exitIfOTPInvalid(text);
     if (!otpVerified) return;
     console.log("OTP verified successfully");
     setupShellForwardingOutputToDataChannel(setupMsg);
@@ -918,7 +917,8 @@ async function main() {
   };
   await new Promise(() => {
   });
-  function exitIfOTPInvalid(setupMsg, text) {
+  function exitIfOTPInvalid(text) {
+    let setupMsg;
     try {
       setupMsg = JSON.parse(text);
       if (setupMsg.type === "setup" && setupMsg.code) {

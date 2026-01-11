@@ -5,7 +5,8 @@
   "scripts": {
     "build": "esbuild src/index.ts src/main.ts src/post.ts --bundle --platform=node --target=node20 --format=cjs --outdir=dist --external:node-pty --external:node-datachannel",
     "start": "node dist/index.js",
-    "lint": "eslint src/"
+    "lint": "eslint src/ && npm run check-dist",
+    "check-dist": "npm run build && git diff --exit-code dist/ || (echo 'Error: dist/ folder is out of date. Run npm run build and commit the changes.' && exit 7)"
   },
   "dependencies": {
     "@actions/core": "^2.0.2",
