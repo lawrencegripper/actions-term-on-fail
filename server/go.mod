@@ -3,7 +3,7 @@ module github.com/lawrencegripper/actions-term-on-fail/server
 go 1.25
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/lestrrat-go/jwx/v2 v2.0.21
 	golang.org/x/oauth2 v0.34.0
 )
