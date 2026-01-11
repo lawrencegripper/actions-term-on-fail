@@ -86,8 +86,10 @@ export async function connectToSession(runId, otpCode, sessionName, callbacks) {
       } else if (peerConnection.connectionState === 'disconnected') {
         onStatus?.('error', 'Connection lost');
         onClose?.();
+      } else if (peerConnection.connectionState === 'connecting') {
+        console.log('WebRTC connecting...');
       } else {
-        onStatus?.('error', 'Unexpected connection state: ' + peerConnection.connectionState);
+        console.log('Unexpected connection state: ' + peerConnection.connectionState);
       }
     };
 

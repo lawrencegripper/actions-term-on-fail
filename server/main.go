@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +21,9 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 )
+
+//go:embed static/*
+var staticFiles embed.FS
 
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 const githubJWKSURL = "https://token.actions.githubusercontent.com/.well-known/jwks"
@@ -85,9 +90,12 @@ func init() {
 }
 
 func main() {
-	// Serve static files
-	fs := http.FileServer(http.Dir("static"))
-	http.Handle("/", fs)
+	// Serve embedded static files
+	staticFS, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		log.Fatal("Failed to create sub filesystem: ", err)
+	}
+	http.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	// API endpoints - Client (authenticated via JWT cookie)
 	http.HandleFunc("/api/client/sessions", handleClientSessions)

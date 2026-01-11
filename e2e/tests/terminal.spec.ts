@@ -160,3 +160,31 @@ test.describe('Terminal End-to-End Flow', () => {
     });
   });
 });
+
+test.describe('Invalid OTP Handling', () => {
+  test('invalid OTP closes session', async ({ page }) => {
+    const app = new AppHelper(page);
+
+    await test.step('Login as charlie (has 1 session)', async () => {
+      await app.login('charlie');
+      await app.waitForAppReady();
+      await app.waitForSessionCount(1);
+    });
+
+    await test.step('Select session and enter invalid OTP', async () => {
+      await app.selectFirstSession();
+      // Enter an invalid OTP code (not "000000" which is the dev bypass)
+      await app.enterOtp('123456');
+    });
+
+    await test.step('Verify session is closed after invald OTP', async () => {
+      // The session should be removed from the list after invalid OTP
+      // because the client exits with an error code
+      await app.waitForSessionCount(0);
+      
+      // Verify no sessions remain for charlie
+      const sessionCount = await app.getSessionCount();
+      expect(sessionCount).toBe(0);
+    });
+  });
+});

@@ -20,7 +20,8 @@ build-client:
 
 # Run server locally (dev mode)
 run-server:
-	cd server && go run .
+	@fuser -k 7373/tcp || true
+	DEV_MODE=true DEV_USER=$(USER) ./server/server
 
 # Run client locally
 run-client:
@@ -29,22 +30,13 @@ run-client:
 # Run in dev mode - starts server in background, then client
 # Access http://localhost:7373/auth/github to login first
 run-devmode: build
-	@echo "Starting server in dev mode..."
-	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
-	@cd server && DEV_MODE=true DEV_USER=$(USER) go run . &
-	@sleep 2
+	@make run-server &
 	@echo ""
 	@echo "Server running at http://localhost:7373"
 	@echo "Login at: http://localhost:7373/auth/github?user=$(USER)"
 	@echo ""
 	@echo "Starting client..."
-	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start &
-	@cd client && DEV_MODE=true OTP_SECRET=$(OTP_SECRET) npm start
-
-# Stop dev mode services
-stop-devmode:
-	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
-	@echo "Dev services stopped"
+	@DEV_MODE=true OTP_SECRET=$(OTP_SECRET) make run-client &
 
 # Clean build artifacts
 clean:
@@ -57,27 +49,15 @@ fmt:
 	cd server && go fmt ./...
 
 # Start services for e2e tests (server + 4 clients with different actors)
-run-e2e-services: build
-	@echo "Starting server for e2e tests..."
-	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
-	@cd server && DEV_MODE=true go run . &
-	@sleep 2
+run-e2e-services:
+	@make build
+	@make run-server &
 	@echo "Starting 4 clients for e2e tests (2 for alice, 1 for bob, 1 for charlie)..."
-	@cd client && DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1001 OTP_SECRET=$(OTP_SECRET) npm start &
-	@sleep 1
-	@cd client && DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1002 OTP_SECRET=$(OTP_SECRET) npm start &
-	@sleep 1
-	@cd client && DEV_MODE=true GITHUB_ACTOR=bob GITHUB_RUN_ID=2001 OTP_SECRET=$(OTP_SECRET) npm start &
-	@sleep 1
-	@cd client && DEV_MODE=true GITHUB_ACTOR=charlie GITHUB_RUN_ID=3001 OTP_SECRET=$(OTP_SECRET) npm start &
-	@sleep 5
+	@DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1001 OTP_SECRET=$(OTP_SECRET) make run-client &
+	@DEV_MODE=true GITHUB_ACTOR=alice GITHUB_RUN_ID=1002 OTP_SECRET=$(OTP_SECRET) make run-client &
+	@DEV_MODE=true GITHUB_ACTOR=bob GITHUB_RUN_ID=2001 OTP_SECRET=$(OTP_SECRET) make run-client &
+	@DEV_MODE=true GITHUB_ACTOR=charlie GITHUB_RUN_ID=3001 OTP_SECRET=$(OTP_SECRET) make run-client &
 	@echo "E2E services started (4 clients)"
-
-# # Stop e2e test services
-# stop-e2e-services:
-# 	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
-# 	@pkill -f "npm start" 2>/dev/null || true
-# 	@echo "E2E services stopped"
 
 # Run e2e tests (starts services, runs tests, stops services)
 smoketest: run-e2e-services
