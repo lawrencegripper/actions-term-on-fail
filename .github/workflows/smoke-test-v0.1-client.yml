@@ -1,4 +1,4 @@
-name: Smoke Test
+name: Smoke Test v0.1 Client
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
     steps:
 
       - name: Use terminal-on-fail action
-        uses: lawrencegripper/actions-term-on-fail@main
+        uses: lawrencegripper/actions-term-on-fail@v0.1
         with:
           otp-secret: ${{ secrets.OTP_SECRET }}
           timeout: "2"
