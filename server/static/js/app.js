@@ -90,11 +90,11 @@ const App = {
 
     async function submitOtp(code) {
       if (!pendingSession.value) return;
-      
+
       showOtpModal.value = false;
       const { runId, repoName } = pendingSession.value;
       pendingSession.value = null;
-      
+
       await connectWithOtp(runId, code, repoName);
     }
 
@@ -158,9 +158,23 @@ const App = {
         }
       };
 
-      sessionsEventSource.onerror = () => {
+      sessionsEventSource.onerror = async () => {
         console.error('Sessions SSE error');
+        showStatus('error', 'Error connecting to the signaling server. Retrying...');
         sseConnected.value = false;
+
+        // Check if we're still authenticated
+        try {
+          const resp = await fetch('/api/client/sessions');
+          if (!resp.ok) {
+            console.error('SSE reconnect auth check failed:', resp.status, resp.statusText);
+            showStatus('error', 'Error authenticating to server. Try reloading the page.');            
+          }
+        } catch (e) {
+            console.error('SSE reconnect communication error:', e);
+            showStatus('error', 'Error communicating to server. Try reloading the page.');            
+        }
+
         setTimeout(() => {
           if (isAuthenticated.value) subscribeToSessions();
         }, 5000);
@@ -170,7 +184,7 @@ const App = {
     function showFlashNotification(session) {
       statusType.value = 'new-session';
       statusMessage.value = { type: 'new-session', session };
-      
+
       if (flashTimeout) clearTimeout(flashTimeout);
       flashTimeout = setTimeout(() => {
         if (statusType.value === 'new-session') hideStatus();
@@ -207,10 +221,10 @@ const App = {
     onMounted(async () => {
       await terminal.initTerminal();
       terminal.setupResizeHandler();
-      
+
       const authed = await checkAuth();
       isLoading.value = false;
-      
+
       if (authed) {
         showNotificationBanner();
         subscribeToSessions();

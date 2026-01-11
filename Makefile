@@ -23,6 +23,9 @@ run-server:
 	@fuser -k 7373/tcp || true
 	DEV_MODE=true DEV_USER=$(USER) ./server/server
 
+stop-server:
+	@fuser -k 7373/tcp || true
+
 # Run client locally
 run-client:
 	cd client && npm start
@@ -65,5 +68,4 @@ smoketest: run-e2e-services
 	@cd e2e && npm install
 	@cd e2e && npx playwright install chromium
 	@echo "Running e2e tests..."
-	@cd e2e && npm test || (cd .. && make stop-e2e-services && exit 1)
-	@make stop-e2e-services || true
+	@cd e2e && npm test
