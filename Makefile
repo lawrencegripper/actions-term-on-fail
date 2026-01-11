@@ -73,11 +73,11 @@ run-e2e-services: build
 	@sleep 5
 	@echo "E2E services started (4 clients)"
 
-# Stop e2e test services
-stop-e2e-services:
-	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
-	@pkill -f "npm start" 2>/dev/null || true
-	@echo "E2E services stopped"
+# # Stop e2e test services
+# stop-e2e-services:
+# 	@lsof -ti :7373 | xargs -r kill -9 2>/dev/null || true
+# 	@pkill -f "npm start" 2>/dev/null || true
+# 	@echo "E2E services stopped"
 
 # Run e2e tests (starts services, runs tests, stops services)
 smoketest: run-e2e-services

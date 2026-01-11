@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@actions/core": "^2.0.2",
-    "node-datachannel": "^0.11.0",
+    "node-datachannel": "^0.31.0",
     "node-pty": "^1.0.0",
     "otpauth": "^9.0.0"
   },

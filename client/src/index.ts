@@ -360,6 +360,7 @@ async function main() {
   });
 
   let remoteDescriptionSet = false;
+  const pendingCandidates: Array<{ candidate: string; mid: string }> = [];
 
   eventSource.onmessage = async (event) => {
     try {
@@ -367,17 +368,24 @@ async function main() {
       if (msg.type === 'answer' && msg.answer) {
         // Set the browser's answer as remote description
         console.log('Setting remote description (answer)');
-        pc.setRemoteDescription(msg.answer.sdp, nodeDataChannel.DescriptionType.Answer);
+        pc.setRemoteDescription(msg.answer.sdp, 'answer');
         remoteDescriptionSet = true;
+        
+        // Process any queued ICE candidates
+        if (pendingCandidates.length > 0) {
+          console.log(`Processing ${pendingCandidates.length} queued ICE candidates`);
+          for (const { candidate, mid } of pendingCandidates) {
+            pc.addRemoteCandidate(candidate, mid);
+          }
+          pendingCandidates.length = 0;
+        }
       } else if (msg.type === 'candidate' && msg.candidate && msg.mid) {
         // Add browser's ICE candidate
         if (remoteDescriptionSet) {
           pc.addRemoteCandidate(msg.candidate, msg.mid);
         } else {
           console.log('Queuing ICE candidate (remote description not set yet)');
-          // In a production app, you'd queue these and add them after setRemoteDescription
-          // For simplicity, we'll just try to add it anyway as node-datachannel may handle this
-          pc.addRemoteCandidate(msg.candidate, msg.mid);
+          pendingCandidates.push({ candidate: msg.candidate, mid: msg.mid });
         }
       }
 

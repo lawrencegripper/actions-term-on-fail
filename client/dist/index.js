@@ -906,19 +906,27 @@ async function main() {
     }
   });
   let remoteDescriptionSet = false;
+  const pendingCandidates = [];
   eventSource.onmessage = async (event) => {
     try {
       const msg = JSON.parse(event.data);
       if (msg.type === "answer" && msg.answer) {
         console.log("Setting remote description (answer)");
-        pc.setRemoteDescription(msg.answer.sdp, nodeDataChannel.DescriptionType.Answer);
+        pc.setRemoteDescription(msg.answer.sdp, "answer");
         remoteDescriptionSet = true;
+        if (pendingCandidates.length > 0) {
+          console.log(`Processing ${pendingCandidates.length} queued ICE candidates`);
+          for (const { candidate, mid } of pendingCandidates) {
+            pc.addRemoteCandidate(candidate, mid);
+          }
+          pendingCandidates.length = 0;
+        }
       } else if (msg.type === "candidate" && msg.candidate && msg.mid) {
         if (remoteDescriptionSet) {
           pc.addRemoteCandidate(msg.candidate, msg.mid);
         } else {
           console.log("Queuing ICE candidate (remote description not set yet)");
-          pc.addRemoteCandidate(msg.candidate, msg.mid);
+          pendingCandidates.push({ candidate: msg.candidate, mid: msg.mid });
         }
       }
     } catch (err) {
