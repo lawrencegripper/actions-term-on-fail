@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       
       # Add the action early - it uses post-job hook to run only on failure (optionally pin to sha with @sha)
-      - uses: lawrencegripper/actions-term-on-fail@main
+      - uses: lawrencegripper/actions-term-on-fail@v0.1
         with:
           otp-secret: ${{ secrets.TERMINAL_OTP_SECRET }}
           timeout: '30'  # Optional: minutes to wait (default: 30)
