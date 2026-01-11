@@ -695,9 +695,13 @@ var EventSource = class {
     this.connect();
   }
   controller = null;
+  retryCount = 0;
+  maxRetries = 3;
+  initialBackoffMs = 1e3;
   onopen = null;
   onerror = null;
   onmessage = null;
+  onfatalerror = null;
   async connect() {
     this.controller = new AbortController();
     try {
@@ -712,6 +716,7 @@ var EventSource = class {
       if (!resp.ok || !resp.body) {
         throw new Error(`SSE connection failed: ${resp.status}`);
       }
+      this.retryCount = 0;
       this.onopen?.();
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -732,7 +737,17 @@ var EventSource = class {
     } catch (err) {
       if (err.name !== "AbortError") {
         this.onerror?.(err);
-        setTimeout(() => this.connect(), 5e3);
+        this.retryCount++;
+        if (this.retryCount < this.maxRetries) {
+          const backoffMs = this.initialBackoffMs * Math.pow(2, this.retryCount - 1);
+          console.log(`SSE connection failed (attempt ${this.retryCount}/${this.maxRetries}): ${err.message}`);
+          console.log(`Retrying in ${backoffMs}ms...`);
+          setTimeout(() => this.connect(), backoffMs);
+        } else {
+          const fatalError = new Error(`SSE connection failed after ${this.maxRetries} attempts: ${err.message}`);
+          console.error(fatalError.message);
+          this.onfatalerror?.(fatalError);
+        }
       }
     }
   }
@@ -807,12 +822,16 @@ async function main() {
   console.log("Connecting to signaling channel...");
   const eventSource = new EventSource(`${SERVER_URL}/api/runner/signal`, "Bearer " + oidcToken);
   eventSource.onopen = () => {
-    console.log("SRE channel connected");
+    console.log("SSE channel connected");
     console.log("Waiting for server to signal browser ICE Candidates. Press Ctrl+C to exit.");
     console.log(`Connect at: ${SERVER_URL}`);
   };
   eventSource.onerror = (err) => {
-    console.error("SRE channel error:", err);
+    console.error("SSE channel error:", err);
+  };
+  eventSource.onfatalerror = (err) => {
+    console.error("Fatal SSE error, giving up:", err.message);
+    process.exit(1);
   };
   const connectionTimeoutMs = CONNECTION_TIMEOUT_MINUTES * 60 * 1e3;
   let connectionEstablished = false;
