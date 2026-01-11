@@ -626,13 +626,65 @@ func usernameFromCookieOrError(r *http.Request) (string, error) {
 	return username, nil
 }
 
+const oauthStateCookieName = "oauth_state"
+
+// generateOAuthState creates a random state token and stores it in a cookie
+func generateOAuthState(w http.ResponseWriter) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	state := hex.EncodeToString(b)
+
+	// Store state in a secure, HttpOnly cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   !isDevMode,
+		SameSite: http.SameSiteLaxMode, // Lax needed for OAuth redirects
+		MaxAge:   600,                  // 10 minutes
+	})
+
+	return state, nil
+}
+
+// validateOAuthState checks if the state from query matches the cookie and clears it
+func validateOAuthState(w http.ResponseWriter, r *http.Request, state string) bool {
+	cookie, err := r.Cookie(oauthStateCookieName)
+	if err != nil {
+		return false
+	}
+
+	// Clear the cookie regardless of validation result
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   !isDevMode,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+
+	return cookie.Value == state
+}
+
 // handleGitHubAuth - Redirect to GitHub OAuth
 func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
 	if isDevMode {
 		handleDevAuth(w, r)
 		return
 	}
-	url := oauthConfig.AuthCodeURL("state", oauth2.AccessTypeOffline)
+
+	state, err := generateOAuthState(w)
+	if err != nil {
+		http.Error(w, "failed to generate state", http.StatusInternalServerError)
+		return
+	}
+
+	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -640,6 +692,13 @@ func handleGitHubAuth(w http.ResponseWriter, r *http.Request) {
 func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if isDevMode {
 		handleDevAuth(w, r)
+		return
+	}
+
+	// Validate state parameter to prevent CSRF
+	state := r.URL.Query().Get("state")
+	if state == "" || !validateOAuthState(w, r, state) {
+		http.Error(w, "invalid state parameter", http.StatusBadRequest)
 		return
 	}
 

@@ -68,8 +68,9 @@ STUN (Google): Used only for ICE candidate discovery, no data relay
 ## Security
 
 1. OIDC from the Action and OAuth from the browser ensure you only see Actions which you triggered (`actor` must be your GitHub user)
-1. The terminal connection is formed peer to peer so no session data is seen by the signaling server. (Note: You can also self-host their own signaling server instance too)
-1. One Time Password secret is not known by the signaling server
+2. The terminal connection is formed peer to peer so no session data is seen by the signaling server. (Note: You can also self-host your own signaling server instance too)
+3. One Time Password secret is not known by the signaling server
+
 
 ### Authentication
 
