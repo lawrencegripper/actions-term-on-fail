@@ -317,11 +317,11 @@ func handleRunnerSubscribe(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			log.Printf("SSE: Sending keepalive ping to actor %s", actor)
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case msg := <-client.Messages:
 			log.Printf("SSE: Sending message to actor %s (size: %d bytes): %s", actor, len(msg), string(msg))
-			fmt.Fprintf(w, "data: %s\n\n", msg)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
 			flusher.Flush()
 			log.Printf("SSE: Message sent and flushed to actor %s", actor)
 		}
@@ -551,10 +551,10 @@ func handleClientSubscribe(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
+			_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case msg := <-client.Messages:
-			fmt.Fprintf(w, "data: %s\n\n", msg)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
 			flusher.Flush()
 		}
 	}
@@ -741,7 +741,7 @@ func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var user struct {
 		Login string `json:"login"`
