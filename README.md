@@ -4,7 +4,10 @@ Ever wanted to jump onto an interactive terminal to poke around and see why a bu
 
 Interactive terminal access to GitHub Actions runners via browser using WebRTC for direct P2P connection when an action fails.
 
-<img width="3802" height="2019" alt="image" src="https://github.com/user-attachments/assets/8bd1417a-63dc-4d36-8e48-f749f849505f" />
+[Blog on how it works 📔](https://blog.gripdev.xyz/2026/01/10/actions-terminal-on-failure-for-debugging/)
+
+https://github.com/user-attachments/assets/93a673c6-8584-434b-a61e-a35c83d98996
+
 
 
 ## Usage in GitHub Actions
