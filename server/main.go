@@ -716,9 +716,11 @@ func handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate state parameter to prevent CSRF
+	// If state is invalid (e.g., cookie expired after user was away), redirect to
+	// start a fresh OAuth flow rather than showing an error
 	state := r.URL.Query().Get("state")
 	if state == "" || !validateOAuthState(w, r, state) {
-		http.Error(w, "invalid state parameter", http.StatusBadRequest)
+		http.Redirect(w, r, "/auth/github", http.StatusTemporaryRedirect)
 		return
 	}
 
